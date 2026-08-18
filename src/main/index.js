@@ -213,12 +213,51 @@ ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('message:dismiss', (_event, sessionId) => registry.dismissMessage(sessionId));
 
-// Local TTS via speech-dispatcher (GNOME's spd-say) — offline, zero tokens.
+// Local TTS, offline and token-free. Prefers Piper (neural pt-BR voice,
+// installed by scripts/install-tts.sh); falls back to spd-say (robotic).
+const piperBinary = path.join(configDir, 'piper', 'piper', 'piper');
+const piperVoice = path.join(configDir, 'piper', 'pt_BR-faber-medium.onnx');
+const PIPER_SAMPLE_RATE = '22050';
+
+let speechProcesses = [];
+
+function stopSpeaking() {
+  for (const child of speechProcesses) {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // already dead
+    }
+  }
+  speechProcesses = [];
+}
+
+function speakWithPiper(text) {
+  const piper = spawnProcess(piperBinary, ['--model', piperVoice, '--output-raw'], {
+    stdio: ['pipe', 'pipe', 'ignore'],
+  });
+  const player = spawnProcess(
+    'aplay',
+    ['-q', '-r', PIPER_SAMPLE_RATE, '-f', 'S16_LE', '-t', 'raw', '-c', '1', '-'],
+    { stdio: ['pipe', 'ignore', 'ignore'] },
+  );
+  speechProcesses = [piper, player];
+  piper.stdout.pipe(player.stdin);
+  piper.on('error', (error) => log(`piper failed: ${error}`));
+  player.on('error', (error) => log(`aplay failed: ${error}`));
+  piper.stdin.end(text);
+}
+
 ipcMain.on('tts:speak', (_event, rawText) => {
   const text = String(rawText ?? '').slice(0, 300);
   if (!text) return;
+  stopSpeaking();
   try {
-    spawnDetached('spd-say', ['-l', 'pt-BR', '--', text]);
+    if (fs.existsSync(piperBinary) && fs.existsSync(piperVoice)) {
+      speakWithPiper(text);
+    } else {
+      spawnDetached('spd-say', ['-l', 'pt-BR', '--', text]);
+    }
   } catch (error) {
     log(`tts failed: ${error}`);
   }
