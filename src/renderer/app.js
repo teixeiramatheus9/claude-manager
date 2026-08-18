@@ -285,7 +285,7 @@ ttsCheckbox.checked = ttsEnabled;
 ttsCheckbox.addEventListener('change', () => {
   ttsEnabled = ttsCheckbox.checked;
   localStorage.setItem('ttsEnabled', ttsEnabled ? '1' : '0');
-  if (ttsEnabled) window.manager.speak('Pronto, agora eu falo com você!');
+  if (ttsEnabled) window.manager.speak('Notificação por voz ativada.');
 });
 
 // --- manager config (terminal + daily token budget) ---
@@ -370,9 +370,20 @@ window.manager.onBlur(() => {
 
 window.manager.onChime(({ kind }) => chime(kind));
 
+// Spoken notifications stay short and instantly understandable — the full
+// message lives in the tooltip/panel.
+const TTS_PHRASES = {
+  done: (projectName) => `Tarefa concluída no ${projectName}.`,
+  question: (projectName) => `Pergunta pendente no ${projectName}.`,
+  waiting: (projectName) => `O chat ${projectName} espera você.`,
+};
+
 window.manager.onTooltip(({ projectName, text, kind }) => {
   chime(kind);
-  if (ttsEnabled && !muted) window.manager.speak(`${projectName}: ${text}`);
+  if (ttsEnabled && !muted) {
+    const phrase = TTS_PHRASES[kind] ?? TTS_PHRASES.waiting;
+    window.manager.speak(phrase(projectName));
+  }
   if (panelOpen) return;
   iconLabel(tooltipProject, SPARK_SVG, projectName);
   tooltipText.textContent = text;
