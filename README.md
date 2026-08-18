@@ -39,6 +39,7 @@ npm start               # sobe a bolha
 - Com o app fechado, os avisos caem em notificação nativa (`notify-send`).
 
 ```bash
+./scripts/install-tts.sh   # voz neural pt-BR (Piper) pro TTS — sem ela, cai no spd-say robótico
 npm run hooks:remove       # desinstala os hooks
 npm run autostart:install  # sobe a bolha junto com o login (Xorg)
 npm run autostart:remove   # remove o autostart
