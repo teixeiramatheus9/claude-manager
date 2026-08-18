@@ -1,0 +1,86 @@
+import { runClaude } from './claude-cli.js';
+
+const HISTORY_LIMIT = 6;
+const HISTORY_ENTRY_CHARS = 300;
+const EXCERPT_CHARS = 1200;
+
+const truncate = (text, max) =>
+  text.length > max ? `${text.slice(0, max)}…` : text;
+
+const STATUS_LABEL = {
+  working: 'trabalhando',
+  done: 'terminou',
+  waiting: 'esperando o usuário',
+};
+
+// Local, zero-token context: one compact line per session.
+export function buildSessionsDigest(sessions, now = Date.now()) {
+  if (!sessions.length) return 'Nenhuma sessão registrada no momento.';
+  return sessions
+    .map((session) => {
+      const theme = session.title ?? session.promptPreview ?? session.projectName;
+      const ageMinutes = Math.max(0, Math.round((now - session.updatedAt) / 60000));
+      const message = session.managerMessage ? ` — último recado: ${truncate(session.managerMessage, 120)}` : '';
+      return `- [${STATUS_LABEL[session.status] ?? session.status}] "${theme}" (pasta ${session.projectName}, há ${ageMinutes}min)${message}`;
+    })
+    .join('\n');
+}
+
+// Only pay for a transcript excerpt when the user actually names a chat.
+export function findMentionedSession(sessions, userMessage) {
+  const messageLower = String(userMessage ?? '').toLowerCase();
+  return (
+    sessions.find((session) => {
+      const candidates = [session.projectName, session.title, session.promptPreview]
+        .filter(Boolean)
+        .map((value) => value.toLowerCase());
+      return candidates.some((candidate) => candidate.length >= 4 && messageLower.includes(candidate));
+    }) ?? null
+  );
+}
+
+export function buildChatPrompt({ digest, history = [], userMessage, transcriptExcerpt = null }) {
+  const historyText = history
+    .slice(-HISTORY_LIMIT)
+    .map((entry) => `${entry.role === 'user' ? 'Usuário' : 'Gerente'}: ${truncate(entry.text, HISTORY_ENTRY_CHARS)}`)
+    .join('\n');
+  return [
+    'Você é o "Gerente", assistente descontraído que acompanha as sessões do Claude Code do usuário.',
+    'Responda em pt-BR informal, DIRETO e CURTO (até 3 frases, a menos que ele peça detalhe).',
+    'Nada de markdown. Você não executa nada — só informa e orienta com base no estado abaixo.',
+    '',
+    'Estado atual das sessões:',
+    digest,
+    transcriptExcerpt
+      ? `\nÚltima resposta do assistente na sessão citada (truncada):\n"""\n${truncate(transcriptExcerpt, EXCERPT_CHARS)}\n"""`
+      : '',
+    historyText ? `\nConversa até agora:\n${historyText}` : '',
+    '',
+    `Usuário: ${userMessage}`,
+    'Gerente:',
+  ]
+    .filter((part) => part !== '')
+    .join('\n');
+}
+
+export async function askManager({
+  sessions,
+  history,
+  userMessage,
+  transcriptExcerpt = null,
+  timeoutMs = 30000,
+  spawnFn,
+  now = Date.now(),
+}) {
+  const prompt = buildChatPrompt({
+    digest: buildSessionsDigest(sessions, now),
+    history,
+    userMessage,
+    transcriptExcerpt,
+  });
+  const result = await runClaude({ prompt, timeoutMs, ...(spawnFn ? { spawnFn } : {}) });
+  return {
+    reply: result?.text?.trim() || 'Xii, travei aqui tentando responder 😅 tenta de novo?',
+    tokensUsed: result?.tokens ?? 0,
+  };
+}

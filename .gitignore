@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+
+# private working context (kept local only)
+CLAUDE.local.md
+docs/

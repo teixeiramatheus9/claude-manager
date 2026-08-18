@@ -1,0 +1,49 @@
+{
+  "name": "claude-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "test": "vitest run",
+    "hooks:install": "node scripts/install-hooks.js",
+    "hooks:remove": "node scripts/install-hooks.js --remove",
+    "autostart:install": "node scripts/install-autostart.js",
+    "autostart:remove": "node scripts/install-autostart.js --remove",
+    "dist": "electron-builder --linux"
+  },
+  "author": "teixeiramatheus9 <teixeiramatheus9@users.noreply.github.com>",
+  "license": "MIT",
+  "description": "Gerente flutuante das sessões do Claude Code",
+  "build": {
+    "appId": "io.github.teixeiramatheus9.claude-manager",
+    "productName": "Claude Manager",
+    "asar": false,
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "scripts/**/*",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Utility",
+      "executableArgs": [
+        "--no-sandbox"
+      ],
+      "maintainer": "teixeiramatheus9 <teixeiramatheus9@users.noreply.github.com>",
+      "synopsis": "Gerente flutuante das sessões do Claude Code"
+    }
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "vitest": "^4.1.10"
+  }
+}
