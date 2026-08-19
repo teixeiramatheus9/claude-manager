@@ -432,7 +432,6 @@ function scheduleSessionsSave() {
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
 app.whenReady().then(() => {
-  if (process.platform === 'darwin') app.dock?.hide();
   ensureHooksInstalled();
   hydrateRegistry();
   createMainWindow();
