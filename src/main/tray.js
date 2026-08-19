@@ -37,7 +37,9 @@ export function trayItemServiceName(pid) {
 // reset the item and read the properties again. But a reset while reads still
 // fail tears down an icon the panel may already be showing, so each attempt
 // first proves the item answers a read of its own, registers once, and stops.
-const REREGISTER_DELAYS_MS = [6000, 12000, 24000];
+// The schedule runs long because the deaf spell has been seen outlast 6s —
+// a failed probe costs one silent gdbus call, so patience is free.
+const REREGISTER_DELAYS_MS = [6000, 6000, 12000, 24000, 48000, 96000];
 
 export async function nudgeTrayRegistration({
   pid,
