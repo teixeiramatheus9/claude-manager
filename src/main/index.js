@@ -20,7 +20,7 @@ import { VOICES } from './sherpa-installer.js';
 import { THEMES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
 import { setupUpdater } from './updater.js';
-import { detectTrayHost, trayMenuTemplate } from './tray.js';
+import { detectTrayHost, nudgeTrayRegistration, trayMenuTemplate } from './tray.js';
 import { installTraySupport, shouldInstallTraySupport } from './tray-support.js';
 import { killPendingClaude } from './claude-cli.js';
 import {
@@ -351,6 +351,15 @@ async function setupTray() {
   });
   refreshTrayMenu();
   sendState();
+  // GNOME's appindicator drops the icon when Electron's item answers its first
+  // property reads with errors, and never looks at it again — re-registering
+  // makes it look again once the app has settled.
+  nudgeTrayRegistration({
+    pid: process.pid,
+    execFn: execFileAsync,
+    waitFn: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    log,
+  });
 }
 
 ipcMain.on('app:quit', () => (tray ? hideToTray() : app.quit()));

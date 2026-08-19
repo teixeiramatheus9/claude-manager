@@ -1,0 +1,2 @@
+- Ícone da bandeja agora aparece de verdade no GNOME: a extensão AppIndicator lê as propriedades do ícone cedo demais, falha e desiste dele pra sempre — o app agora se re-registra na bandeja alguns segundos depois de subir, quando as leituras já funcionam
+- Sem o ícone visível, "Encerrar" escondia a bolha e não deixava nada no lugar (app invisível, sem menu, sem volta) — com o re-registro a bandeja volta a ser o caminho de volta
