@@ -5,6 +5,7 @@ import {
   procStartFromStat,
   parsePeerKey,
   readSessionChannel,
+  readLiveSessionIds,
 } from '../src/main/cc-sessions.js';
 
 const SESSION_ID = '4b706711-9840-4931-8b0f-d6d51518d6ba';
@@ -113,5 +114,67 @@ describe('claude code session registry', () => {
       },
     });
     expect(channel).toBeNull();
+  });
+});
+
+describe('live session ids', () => {
+  const live = (overrides) => JSON.stringify({ pid: 100, sessionId: 'alive', ...overrides });
+
+  it('lists the sessions whose process is still running', () => {
+    const ids = readLiveSessionIds({
+      dir: '/sessions',
+      readdirSync: () => ['100.json'],
+      readFileSync: () => live({ procStart: '999' }),
+      procStartFor: () => '999',
+      isAlive: () => true,
+    });
+    expect([...ids]).toEqual(['alive']);
+  });
+
+  // Closing a terminal window SIGHUPs claude, so the <pid>.json can outlive the
+  // process it describes. The file alone is not proof the session exists.
+  it('skips a record left behind by a killed process', () => {
+    const ids = readLiveSessionIds({
+      dir: '/sessions',
+      readdirSync: () => ['100.json'],
+      readFileSync: () => live({ procStart: '999' }),
+      procStartFor: () => null,
+      isAlive: () => false,
+    });
+    expect([...ids]).toEqual([]);
+  });
+
+  it('skips a record whose pid was recycled by another process', () => {
+    const ids = readLiveSessionIds({
+      dir: '/sessions',
+      readdirSync: () => ['100.json'],
+      readFileSync: () => live({ procStart: '999' }),
+      procStartFor: () => '4242',
+      isAlive: () => true,
+    });
+    expect([...ids]).toEqual([]);
+  });
+
+  // Liveness is not the same question as "can we talk to it": a session on an
+  // unknown peer protocol is still very much alive, and must not be reaped.
+  it('counts a session the messaging channel cannot use', () => {
+    const ids = readLiveSessionIds({
+      dir: '/sessions',
+      readdirSync: () => ['100.json'],
+      readFileSync: () => JSON.stringify({ pid: 100, sessionId: 'alive', peerProtocol: 7 }),
+      procStartFor: () => null,
+      isAlive: () => true,
+    });
+    expect([...ids]).toEqual(['alive']);
+  });
+
+  it('reports no registry at all as null, not as an empty set', () => {
+    const ids = readLiveSessionIds({
+      dir: '/sessions',
+      readdirSync: () => {
+        throw new Error('ENOENT');
+      },
+    });
+    expect(ids).toBeNull();
   });
 });

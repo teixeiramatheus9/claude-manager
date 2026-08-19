@@ -69,6 +69,58 @@ function defaultProcStartFor(pid) {
   }
 }
 
+function defaultIsAlive(pid) {
+  try {
+    // signal 0 only runs the permission/existence check, it delivers nothing.
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the pid is taken by a process this user cannot signal, which
+    // still counts as alive; only ESRCH proves nobody is there.
+    return error?.code === 'EPERM';
+  }
+}
+
+// Liveness only: which sessions still have a running process behind them. This
+// deliberately ignores peerProtocol and the socket path — a session the
+// messaging channel cannot use is still alive, and reaping it would be wrong.
+// Returns null when there is no registry to read, which means "no opinion":
+// callers must not treat that as "every session is dead".
+export function readLiveSessionIds({
+  dir = claudeSessionsDir,
+  readdirSync = fs.readdirSync,
+  readFileSync = fs.readFileSync,
+  procStartFor = defaultProcStartFor,
+  isAlive = defaultIsAlive,
+} = {}) {
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return null;
+  }
+
+  const alive = new Set();
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue;
+    let raw;
+    try {
+      raw = JSON.parse(readFileSync(path.join(dir, entry), 'utf8'));
+    } catch {
+      continue;
+    }
+    const { pid, sessionId } = raw ?? {};
+    if (!Number.isInteger(pid) || typeof sessionId !== 'string' || !sessionId) continue;
+    if (!isAlive(pid)) continue;
+    // A <pid>.json can outlive its process, so the pid may already belong to
+    // something else. procStart is absent on platforms without /proc.
+    const procStart = typeof raw.procStart === 'string' ? raw.procStart : null;
+    if (procStart && procStartFor(pid) !== procStart) continue;
+    alive.add(sessionId);
+  }
+  return alive;
+}
+
 // Resolves a hook-reported sessionId to everything needed to talk to that
 // session's socket, or null when there is no usable channel — in which case the
 // caller falls back to driving the terminal window.

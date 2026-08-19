@@ -10,6 +10,15 @@ export const STATUS = {
 const HANDLED_EVENTS = ['UserPromptSubmit', 'Stop', 'Notification'];
 const DEFAULT_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
+// Claude Code identifies its sessions by uuid, so anything else — the
+// simulate-event.sh fixtures, above all — can never appear in its registry and
+// must not be judged by whether it does.
+const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isClaudeSessionId(sessionId) {
+  return SESSION_ID_RE.test(String(sessionId ?? ''));
+}
+
 export class SessionRegistry extends EventEmitter {
   constructor({ maxAgeMs = DEFAULT_MAX_AGE_MS, now = () => Date.now() } = {}) {
     super();
@@ -36,6 +45,7 @@ export class SessionRegistry extends EventEmitter {
       unread: false,
       updatedAt: 0,
       wave: null,
+      seenAlive: false,
     };
     if (event.wave?.blockId) session.wave = event.wave;
     if (event.cwd) {
@@ -111,6 +121,31 @@ export class SessionRegistry extends EventEmitter {
         session.unread = false;
         changed = true;
       }
+    }
+    if (changed) this.emit('change');
+  }
+
+  // Closing a terminal kills the chat without firing any hook, so the only way
+  // to know a session is gone is to compare the list against the sessions
+  // Claude Code itself registers. A session is only reaped once it has been
+  // seen alive there: absence on its own is not proof of death, because builds
+  // without the registry never list anything.
+  reconcileLiveSessions(liveIds) {
+    if (!liveIds) return;
+    // One live session is proof the registry works on this machine, which is
+    // what makes another session's absence from it meaningful. When it lists
+    // nothing, only a session seen alive earlier can be called dead.
+    const registryWorks = liveIds.size > 0;
+    let changed = false;
+    for (const [sessionId, session] of this.sessions) {
+      if (liveIds.has(sessionId)) {
+        session.seenAlive = true;
+        continue;
+      }
+      if (!isClaudeSessionId(sessionId)) continue;
+      if (!session.seenAlive && !registryWorks) continue;
+      this.sessions.delete(sessionId);
+      changed = true;
     }
     if (changed) this.emit('change');
   }

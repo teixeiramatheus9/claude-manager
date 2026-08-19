@@ -17,7 +17,7 @@ import { setupUpdater } from './updater.js';
 import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir } from './paths.js';
 import { log } from './log.js';
 import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
-import { readSessionChannel } from './cc-sessions.js';
+import { readSessionChannel, readLiveSessionIds } from './cc-sessions.js';
 import { readInboundPolicy, setInboundPolicy } from './claude-settings.js';
 import { sendUserMessage } from './cc-peer.js';
 
@@ -77,6 +77,9 @@ const MODE_SIZES = {
 const BUBBLE_BOX = MODE_SIZES.bubble.width;
 const CLICK_THRESHOLD_PX = 6;
 const PRUNE_INTERVAL_MS = 10 * 60 * 1000;
+// Short, because a closed terminal should leave the list right away rather
+// than sit there claiming the chat is still working.
+const LIVENESS_INTERVAL_MS = 15 * 1000;
 
 const registry = new SessionRegistry();
 let managerConfig = loadConfig(configFile);
@@ -542,6 +545,12 @@ function hydrateRegistry() {
   }
 }
 
+// Drops the sessions whose terminal was closed: they never send a hook on the
+// way out, so without this they linger frozen on their last status.
+function reapDeadSessions() {
+  registry.reconcileLiveSessions(readLiveSessionIds());
+}
+
 let saveTimer = null;
 function scheduleSessionsSave() {
   clearTimeout(saveTimer);
@@ -568,11 +577,13 @@ app.whenReady().then(() => {
   );
   ensureHooksInstalled();
   hydrateRegistry();
+  reapDeadSessions();
   createMainWindow();
   startSocketServer(socketPath, onHookEvent, log);
   registry.on('change', sendState);
   registry.on('change', scheduleSessionsSave);
   setInterval(() => registry.prune(), PRUNE_INTERVAL_MS);
+  setInterval(reapDeadSessions, LIVENESS_INTERVAL_MS);
   updaterHandle = setupUpdater({ onStatus: onUpdateStatus, log });
 });
 

@@ -144,3 +144,88 @@ describe('SessionRegistry', () => {
     expect(registry.list()[0].id).toBe('s2');
   });
 });
+
+describe('reconciling against the live Claude Code sessions', () => {
+  const S1 = '4b706711-9840-4931-8b0f-d6d51518d6ba';
+  const S2 = '7d6b682c-5c11-4e0a-b3d2-9f0e1a7c4d55';
+  const withSessions = (...ids) => {
+    const registry = new SessionRegistry();
+    for (const id of ids) registry.applyEvent(promptEvent({ session_id: id }));
+    return registry;
+  };
+
+  it('drops a session whose terminal was closed', () => {
+    const registry = withSessions(S1, S2);
+    registry.reconcileLiveSessions(new Set([S1, S2]));
+
+    registry.reconcileLiveSessions(new Set([S1]));
+
+    expect([...registry.sessions.keys()]).toEqual([S1]);
+  });
+
+  // A session the manager never saw in the registry may be running on a build
+  // without it, so its absence proves nothing and it must survive.
+  it('keeps a session it never saw alive in the registry', () => {
+    const registry = withSessions(S1);
+
+    registry.reconcileLiveSessions(new Set());
+
+    expect([...registry.sessions.keys()]).toEqual([S1]);
+  });
+
+  it('ignores a null reading, which means the registry is unreadable', () => {
+    const registry = withSessions(S1);
+    registry.reconcileLiveSessions(new Set([S1]));
+
+    registry.reconcileLiveSessions(null);
+
+    expect([...registry.sessions.keys()]).toEqual([S1]);
+  });
+
+  it('announces the change only when a session actually went away', () => {
+    const registry = withSessions(S1);
+    registry.reconcileLiveSessions(new Set([S1]));
+    const onChange = vi.fn();
+    registry.on('change', onChange);
+
+    registry.reconcileLiveSessions(new Set([S1]));
+    expect(onChange).not.toHaveBeenCalled();
+
+    registry.reconcileLiveSessions(new Set());
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  // Sessions persisted before this app knew about liveness carry no flag, so
+  // they would otherwise sit there until the 12h prune. A registry listing a
+  // live session proves it works on this machine, which makes absence mean
+  // something on its own.
+  it('reaps an unflagged session once the registry proves it is working', () => {
+    const registry = new SessionRegistry();
+    registry.hydrate([{ id: '6b2aa174-1f3e-4a5c-9d80-2b1c4e7f9a03', updatedAt: 1 }]);
+
+    registry.reconcileLiveSessions(new Set(['4b706711-9840-4931-8b0f-d6d51518d6ba']));
+
+    expect([...registry.sessions.keys()]).toEqual([]);
+  });
+
+  // simulate-event.sh fabricates sessions with no process behind them; the
+  // registry can never list one, so its absence proves nothing.
+  it('keeps a simulated session the registry could never list', () => {
+    const registry = withSessions('sim-projeto-teste');
+
+    registry.reconcileLiveSessions(new Set(['4b706711-9840-4931-8b0f-d6d51518d6ba']));
+
+    expect([...registry.sessions.keys()]).toEqual(['sim-projeto-teste']);
+  });
+
+  // Liveness survives a restart through sessions.json, so a session closed
+  // while the app was down is reaped on the first reading after it comes back.
+  it('reaps a hydrated session that was seen alive before the restart', () => {
+    const registry = new SessionRegistry();
+    registry.hydrate([{ id: S1, seenAlive: true, updatedAt: 1 }]);
+
+    registry.reconcileLiveSessions(new Set());
+
+    expect([...registry.sessions.keys()]).toEqual([]);
+  });
+});

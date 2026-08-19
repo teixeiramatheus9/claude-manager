@@ -52,6 +52,11 @@ Pontos críticos:
   terminal e de display server, e não pode cair no chat errado porque endereça
   por `sessionId`. O canal está atrás de feature gate remoto, então o fallback
   via `xdotool` continua obrigatório.
+- **Sessão morta**: fechar o terminal mata o `claude` sem disparar hook nenhum,
+  então a lista só descobre isso comparando com `~/.claude/sessions/`. Ausência
+  ali não é prova de morte: builds sem o registro não listam nada. Só se reapa
+  sessão já vista viva, ou quando o registro lista alguma outra (prova de que
+  funciona nessa máquina), e nunca as fixtures `sim-*` do simulate-event.sh.
 - **Sandbox do Electron no Ubuntu 24+**: `npm start` usa `--no-sandbox`
   (só HTML local). Alternativa com sandbox: ver README.
 
