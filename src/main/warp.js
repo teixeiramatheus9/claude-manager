@@ -60,6 +60,26 @@ export const TERMINALS = {
   kitty: { label: 'Kitty', classHint: 'kitty', nextTabKey: 'ctrl+shift+bracketright', hasTabs: true },
   alacritty: { label: 'Alacritty', classHint: 'alacritty', nextTabKey: null, hasTabs: false },
   konsole: { label: 'Konsole', classHint: 'konsole', nextTabKey: 'shift+Right', hasTabs: true },
+  blackbox: {
+    label: 'Black Box',
+    classHint: 'blackbox',
+    nextTabKey: 'ctrl+Next',
+    hasTabs: true,
+  },
+  terminator: {
+    label: 'Terminator',
+    classHint: 'terminator',
+    nextTabKey: 'ctrl+Next',
+    hasTabs: true,
+  },
+  guake: {
+    label: 'Guake (drop-down)',
+    classHint: 'guake',
+    nextTabKey: 'ctrl+Next',
+    hasTabs: true,
+    // drop-down terminal: hidden until summoned, so bring it up before hunting
+    summon: ['guake', '--show'],
+  },
   tilix: { label: 'Tilix', classHint: 'tilix', nextTabKey: 'ctrl+Next', hasTabs: true },
   wezterm: { label: 'WezTerm', classHint: 'wezterm', nextTabKey: 'ctrl+Tab', hasTabs: true },
 };
@@ -81,6 +101,8 @@ const TERMINAL_CLASS_HINTS = [
   'kgx',
   'ptyxis',
   'terminator',
+  'guake',
+  'blackbox',
   'wezterm',
 ];
 
@@ -141,6 +163,15 @@ export async function focusChatTab(
 ) {
   try {
     const spec = terminalSpec(terminal);
+    if (spec.summon) {
+      // drop-down terminals (guake) stay hidden until summoned
+      try {
+        await execFn(spec.summon[0], spec.summon.slice(1));
+        await sleep(delayMs);
+      } catch {
+        // not running or not installed — the normal hunt still applies
+      }
+    }
     const allWindows = await listWindows({ execFn });
     if (!allWindows.length) {
       return { focused: false, tabFound: false, matchedTitle: null, cause: 'no-x-windows' };

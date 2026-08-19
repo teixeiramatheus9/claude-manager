@@ -9,6 +9,8 @@ resposta rápida direto no terminal e conversa com o gerente.
 
 - Código, comentários e commits em inglês; strings visíveis ao usuário em pt-BR.
 - Commits seguem Conventional Commits.
+- Commits **nunca** levam Claude como co-autor: nada de trailer `Co-Authored-By`
+  nem menção a IA na mensagem.
 - Testes com vitest (`npm test`) — TDD nos módulos puros (registry, parsers,
   voice, warp, budget, display-mode, cc-sessions, cc-peer).
 - `src/hook/hook-emit.js` é standalone de propósito (roda em todo evento de
