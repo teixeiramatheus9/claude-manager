@@ -733,8 +733,12 @@ function sessionElement(session) {
   // One message balloon per chat — the exact text that went out in the
   // tooltip. A pending question adds its options as compact chips INSIDE
   // the same balloon, never as extra message lines.
+  // A pending question owns the balloon — its text IS the question. Otherwise
+  // the balloon shows what the chat itself last said, and only falls back to
+  // the manager's phrase while that digest has not landed yet.
   const messageText =
-    session.managerMessage ?? (session.status === 'done' ? 'Escrevendo o recado…' : null);
+    (session.question ? session.managerMessage : (session.lastMessage ?? session.managerMessage)) ??
+    (session.status === 'done' ? 'Escrevendo o recado…' : null);
   if (messageText) {
     const balloon = document.createElement('div');
     balloon.className = 'message';

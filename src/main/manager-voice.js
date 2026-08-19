@@ -27,9 +27,12 @@ export function humanizeNotification(message, random = Math.random) {
   return WAITING_PHRASES[Math.floor(random() * WAITING_PHRASES.length)];
 }
 
+// No title here on purpose. This is what comes out when claude -p fails or
+// economy mode is on, and a generic "Tarefa concluída" would overwrite the
+// chat's subject with something the status dot and label already say.
 export function fallbackMessage(projectName, random = Math.random) {
   const phrase = FALLBACK_PHRASES[Math.floor(random() * FALLBACK_PHRASES.length)];
-  return { title: 'Tarefa concluída', message: phrase(projectName) };
+  return { message: phrase(projectName) };
 }
 
 export function buildPrompt(projectName, lastAssistantMessage) {
@@ -41,7 +44,8 @@ export function buildPrompt(projectName, lastAssistantMessage) {
     `Uma sessão do projeto '${projectName}' acabou de terminar uma tarefa.`,
     context,
     'Responda SOMENTE com JSON válido neste formato: {"title": "...", "message": "..."}',
-    '- "title": máximo 6 palavras, em pt-BR, dizendo qual era a tarefa.',
+    '- "title": máximo 6 palavras, em pt-BR, nomeando o ASSUNTO do chat (do que',
+    '  essa conversa trata como um todo), não o que acabou de ser feito agora.',
     `- "message": 1 a 2 frases em pt-BR bem informal, estilo "Opa, aquela tarefa do '${projectName}' terminou, dá uma olhada lá po", mencionando brevemente o que foi feito.`,
     'Nada de markdown, nada de texto fora do JSON.',
   ].join('\n');
