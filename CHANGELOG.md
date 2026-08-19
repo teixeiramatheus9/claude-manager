@@ -1,14 +1,10 @@
 # Release Notes
 
-Toda PR de `feat/*`, `fix/*` ou `release/*` DEVE adicionar sua descrição aqui,
-na seção **Não lançado** (o CI reprova a PR sem isso). A primeira feat da
-rodada cria a seção `### Feats`; o primeiro fix cria a `### Fixes`. PRs de
-`release/*` escrevem a nota completa da versão. No corte da release, tudo que
-foi adicionado aqui desde a última tag vira o corpo da release no GitHub.
+> **Histórico.** Este arquivo guarda as notas até a v0.8.1 e não é mais editado
+> por PRs. Novas entradas vão em arquivos próprios dentro de `changelogs/` —
+> veja `changelogs.md`.
 
-Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
-
-## Não lançado
+## Até a v0.8.1
 
 ### Feats
 - Notificação por voz da pergunta agora diz quantas opções tem pra escolher ("tem uma pergunta no X com 3 opções")
