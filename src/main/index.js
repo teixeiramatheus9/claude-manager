@@ -8,6 +8,7 @@ import { SessionRegistry } from './session-registry.js';
 import { startSocketServer } from './socket-server.js';
 import { readTranscriptSnapshot } from './transcript.js';
 import { generateManagerMessage, humanizeNotification } from './manager-voice.js';
+import { digestMessage } from './message-digest.js';
 import { askManager, findMentionedSession } from './manager-chat.js';
 import { fallbackMessage } from './manager-voice.js';
 import { loadConfig, saveConfig } from './config-store.js';
@@ -352,6 +353,7 @@ async function generateVoiceForStop(session) {
   // A Stop can itself end on a question ("which option do you want?"), so a
   // pending ask found here is shown too instead of being discarded.
   registry.setQuestion(session.id, snapshot.pendingQuestion);
+  registry.setLastMessage(session.id, digestMessage(snapshot.lastAssistantMessage));
   let voice;
   if (isEconomyMode()) {
     voice = fallbackMessage(session.projectName);
