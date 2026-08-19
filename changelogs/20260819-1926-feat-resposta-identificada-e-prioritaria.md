@@ -1,0 +1,1 @@
+- Resposta rápida agora chega no chat identificada como resposta do usuário vinda do Claude Manager (antes aparecia como "unknown") e fura a fila da sessão em vez de esperar o turno em andamento terminar

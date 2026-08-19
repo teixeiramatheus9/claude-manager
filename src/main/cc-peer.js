@@ -10,11 +10,26 @@ const SEND_TIMEOUT_MS = 4000;
 //     | socat - UNIX-CONNECT:<sock>
 // The auth line is only required on some builds, so it is sent whenever a token
 // is available and omitted otherwise.
-export function buildFrames({ text, token, msgId }) {
+// Who the receiving chat sees in <cross-session-message from="...">. Without
+// this field the session shows the message as from="unknown". The receiver
+// only accepts [A-Za-z0-9%:_/.\-] here, and the value doubles as a reply
+// address for sessions that run a listening socket — this app does not, so it
+// is a pure identity: the user's own quick reply, relayed verbatim.
+export const PEER_FROM = 'claude-manager/resposta-do-usuario';
+
+export function buildFrames({ text, token, msgId, priority }) {
   const frames = [];
   if (token) frames.push(JSON.stringify({ type: 'auth', token }));
   frames.push(
-    JSON.stringify({ type: 'user', msg_id: msgId, message: { role: 'user', content: text } }),
+    JSON.stringify({
+      type: 'user',
+      msg_id: msgId,
+      from: PEER_FROM,
+      // 'now' makes the reply jump the session's queue instead of waiting for
+      // the current turn to finish; omitted, the receiver defaults to 'next'.
+      ...(priority ? { priority } : {}),
+      message: { role: 'user', content: text },
+    }),
   );
   return frames;
 }
@@ -31,6 +46,7 @@ export function sendUserMessage(
   {
     token = null,
     msgId = randomUUID(),
+    priority = null,
     timeoutMs = SEND_TIMEOUT_MS,
     connect = net.createConnection,
   } = {},
@@ -61,7 +77,7 @@ export function sendUserMessage(
     timer.unref?.();
 
     socket.on('connect', () => {
-      socket.end(`${buildFrames({ text: content, token, msgId }).join('\n')}\n`);
+      socket.end(`${buildFrames({ text: content, token, msgId, priority }).join('\n')}\n`);
     });
     // There is deliberately no attempt to tell acceptance from rejection here.
     // On a unix socket a peer destroy() is INDISTINGUISHABLE from a clean close:

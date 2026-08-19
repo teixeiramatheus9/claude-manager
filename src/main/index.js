@@ -639,8 +639,11 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const optionText = session.question?.questions?.[0]?.options?.[index];
   const channel = readSessionChannel(session.id);
   if (channel && typeof optionText === 'string' && optionText.trim()) {
+    // 'now': the chat is parked on this question, so the answer must not sit
+    // behind anything else in its queue.
     const outcome = await sendUserMessage(channel.socketPath, optionText, {
       token: channel.token,
+      priority: 'now',
     });
     if (outcome === 'sent') {
       registry.markAnswered(sessionId);
@@ -666,7 +669,12 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
 async function replyToSession(session, text) {
   const channel = session?.id ? readSessionChannel(session.id) : null;
   if (channel) {
-    const outcome = await sendUserMessage(channel.socketPath, text, { token: channel.token });
+    // A panel reply is the user reacting to this chat right now — jump the
+    // queue instead of waiting for whatever turn is in flight to finish.
+    const outcome = await sendUserMessage(channel.socketPath, text, {
+      token: channel.token,
+      priority: 'now',
+    });
     if (outcome === 'sent') return 'sent';
     log(`peer channel unusable for ${session.id} (${outcome}) — falling back to the terminal`);
   }
