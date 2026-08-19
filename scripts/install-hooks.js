@@ -39,9 +39,26 @@ export function removeHooks(settings, command) {
 }
 
 // Every install of this app registers a command containing the hook script
-// name; ensureHooks swaps any stale variant (old path, old runtime) for the
-// current command, leaving other tools' hooks untouched.
-export const HOOK_MARKER = 'hook-emit.js';
+// name; ensureHooks swaps any stale variant (old path, old runtime, cmd shim)
+// for the current command, leaving other tools' hooks untouched.
+export const HOOK_MARKER = 'hook-emit';
+
+// Claude Code runs hook commands through a shell: POSIX `VAR=1 cmd` on
+// Linux/macOS, but on Windows that syntax does not exist — so the env setup
+// lives in a .cmd shim and the settings file only carries the shim path.
+export function buildHookCommand({ platform, execPath, hookScript, shimDir }) {
+  if (platform === 'win32') {
+    const shimPath = path.win32.join(shimDir, 'hook-emit.cmd');
+    const content = [
+      '@echo off',
+      'set ELECTRON_RUN_AS_NODE=1',
+      `"${execPath}" "${hookScript}" %*`,
+      '',
+    ].join('\r\n');
+    return { command: `"${shimPath}"`, shim: { path: shimPath, content } };
+  }
+  return { command: `ELECTRON_RUN_AS_NODE=1 "${execPath}" "${hookScript}"`, shim: null };
+}
 
 // Quitting takes this app's hooks down with it — by marker, so an old install
 // path or runtime goes too, and other tools' hooks stay.
