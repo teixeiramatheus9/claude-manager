@@ -32,4 +32,12 @@ describe('pickPackageAsset', () => {
     expect(pickPackageAsset(assets, 'deb', 'arm64')).not.toBeNull();
     expect(pickPackageAsset([{ name: 'x.AppImage' }], 'rpm')).toBeNull();
   });
+
+  it('picks the exe asset for win32', () => {
+    const withExe = [
+      { name: 'Claude-Manager-1.2.3.AppImage' },
+      { name: 'Claude Manager Setup 1.2.3.exe' },
+    ];
+    expect(pickPackageAsset(withExe, 'exe', 'x64').name).toBe('Claude Manager Setup 1.2.3.exe');
+  });
 });

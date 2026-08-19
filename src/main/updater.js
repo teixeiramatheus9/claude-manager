@@ -64,7 +64,8 @@ export function setupUpdater({ onStatus, log, fetchFn = fetch }) {
     return { status: () => ({ ...status }), apply: () => {}, check: async () => ({ ...status }) };
   }
 
-  if (process.env.APPIMAGE) {
+  // NSIS installs get true electron-updater auto-update, same as AppImage.
+  if (process.env.APPIMAGE || process.platform === 'win32') {
     status.mode = 'auto';
     const { autoUpdater } = electronUpdaterPackage;
     autoUpdater.autoDownload = true;
