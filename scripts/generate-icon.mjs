@@ -10,6 +10,10 @@ const SIZE = 512;
 const MARGIN = 16;
 const CORNER = 112; // macOS-ish superellipse radius
 const BORDER = 4;
+// The panel draws its own background and shows the icon small, so the tray
+// variant is the bare glyph on transparency — a dark tile there reads as a
+// black smudge next to every other status icon.
+const TRAY_SIZE = 64;
 
 // --- scene ---------------------------------------------------------------
 
@@ -98,35 +102,56 @@ function chunk(type, data) {
   return Buffer.concat([length, typeAndData, crc]);
 }
 
-const raw = Buffer.alloc(SIZE * (SIZE * 4 + 1));
-for (let y = 0; y < SIZE; y++) {
-  const rowStart = y * (SIZE * 4 + 1);
-  raw[rowStart] = 0; // filter: none
-  for (let x = 0; x < SIZE; x++) {
-    const [r, g, b, a] = pixel(x, y);
-    const offset = rowStart + 1 + x * 4;
-    raw[offset] = r;
-    raw[offset + 1] = g;
-    raw[offset + 2] = b;
-    raw[offset + 3] = a;
+function encodePng(size, pixelAt) {
+  const raw = Buffer.alloc(size * (size * 4 + 1));
+  for (let y = 0; y < size; y++) {
+    const rowStart = y * (size * 4 + 1);
+    raw[rowStart] = 0; // filter: none
+    for (let x = 0; x < size; x++) {
+      const [r, g, b, a] = pixelAt(x, y);
+      const offset = rowStart + 1 + x * 4;
+      raw[offset] = r;
+      raw[offset + 1] = g;
+      raw[offset + 2] = b;
+      raw[offset + 3] = a;
+    }
   }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // color type RGBA
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
-const ihdr = Buffer.alloc(13);
-ihdr.writeUInt32BE(SIZE, 0);
-ihdr.writeUInt32BE(SIZE, 4);
-ihdr[8] = 8; // bit depth
-ihdr[9] = 6; // color type RGBA
-
-const png = Buffer.concat([
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  chunk('IHDR', ihdr),
-  chunk('IDAT', deflateSync(raw, { level: 9 })),
-  chunk('IEND', Buffer.alloc(0)),
-]);
+// Same 11x11 grid as the app icon, scaled to the tray size and drawn in the
+// accent alone so the panel's own background shows through.
+function trayPixel(x, y) {
+  const unit = TRAY_SIZE / GRID;
+  let hits = 0;
+  for (let sy = 0; sy < 3; sy++) {
+    for (let sx = 0; sx < 3; sx++) {
+      const gx = (x + (sx + 0.5) / 3) / unit;
+      const gy = (y + (sy + 0.5) / 3) / unit;
+      if (MARKS.some(([mx, my, mw, mh]) => gx >= mx && gx < mx + mw && gy >= my && gy < my + mh)) {
+        hits++;
+      }
+    }
+  }
+  return [...ACCENT, Math.round((hits / 9) * 255)];
+}
 
 const outputDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'assets');
 fs.mkdirSync(outputDir, { recursive: true });
 const outputFile = path.join(outputDir, 'icon.png');
+const png = encodePng(SIZE, pixel);
+const trayFile = path.join(outputDir, 'tray-icon.png');
+fs.writeFileSync(trayFile, encodePng(TRAY_SIZE, trayPixel));
+console.log(`Wrote ${trayFile} (${TRAY_SIZE}x${TRAY_SIZE})`);
 fs.writeFileSync(outputFile, png);
 console.log(`Wrote ${outputFile} (${png.length} bytes)`);

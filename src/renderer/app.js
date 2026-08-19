@@ -250,13 +250,19 @@ const voiceVolumeInput = document.getElementById('voice-volume');
 const timbreSelect = document.getElementById('timbre');
 
 // One view at a time: the list, the config or the manager chat.
-settingsButton.addEventListener('click', () => {
-  const opening = settingsPop.classList.contains('hidden');
-  if (opening) setChatOpen(false);
-  settingsPop.classList.toggle('hidden', !opening);
-  sessionsContainer.classList.toggle('hidden', opening);
+function setSettingsOpen(open) {
+  if (open) setChatOpen(false);
+  settingsPop.classList.toggle('hidden', !open);
+  sessionsContainer.classList.toggle('hidden', open);
   renderHeaderPath();
+}
+
+settingsButton.addEventListener('click', () => {
+  setSettingsOpen(settingsPop.classList.contains('hidden'));
 });
+
+// "Configurações" in the tray menu lands straight here.
+window.manager.onOpenSettings(() => setSettingsOpen(true));
 // The preview plays right away, so the local value moves first: waiting for
 // the config round trip would preview the volume you just left behind.
 volumeInput.addEventListener('change', () => {
@@ -868,7 +874,8 @@ const trayStatusLine = document.getElementById('tray-status');
 function renderTrayStatus(needsRelogin) {
   trayStatusLine.classList.toggle('hidden', !needsRelogin);
   if (needsRelogin) {
-    trayStatusLine.textContent = '# bandeja instalada — ela aparece no próximo login';
+    trayStatusLine.textContent =
+      '# bandeja instalada — sai e entra na sessão (logout) pra ela aparecer';
   }
 }
 

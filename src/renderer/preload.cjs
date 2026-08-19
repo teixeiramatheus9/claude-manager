@@ -28,5 +28,6 @@ contextBridge.exposeInMainWorld('manager', {
   onBlur: (callback) => ipcRenderer.on('ui:blur', () => callback()),
   onEnv: (callback) => ipcRenderer.on('ui:env', (_event, env) => callback(env)),
   onOverlayMode: (callback) => ipcRenderer.on('overlay:mode', (_event, mode) => callback(mode)),
+  onOpenSettings: (callback) => ipcRenderer.on('ui:open-settings', () => callback()),
   onClick: (callback) => ipcRenderer.on('ui:click', () => callback()),
 });
