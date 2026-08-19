@@ -17,6 +17,7 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 - O gerente avisa por voz quando termina de se atualizar
 
 ### Fixes
+- Opções da pergunta aparecem no card mesmo quando o aviso chega antes do transcript ser gravado — o app agora relê o arquivo algumas vezes antes de desistir
 - Ajustes de som (volume, timbre, mudo, TTS) voltam a valer na hora: eles moravam em cada janela, e quem toca o som é a bolinha enquanto quem configura é o painel
 - Prévia de som toca com o volume recém-escolhido, em vez do valor anterior
 - Barra dos sliders para de mostrar um valor diferente do botão em controles que não começam no zero
