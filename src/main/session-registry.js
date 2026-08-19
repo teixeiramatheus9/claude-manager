@@ -159,6 +159,39 @@ export class SessionRegistry extends EventEmitter {
     if (changed) this.emit('change');
   }
 
+  // Chats the hooks never reported — opened before the manager was up, or
+  // closed from the panel — only exist in Claude Code's own registry, so the
+  // entry is built from that record. A chat the hooks already track carries
+  // history the record does not, so it always wins over adoption. Idle chats
+  // finished long before the rescan: done without unread describes them
+  // without ringing any bell.
+  adopt(records = []) {
+    let added = 0;
+    for (const record of records) {
+      const sessionId = record?.sessionId;
+      if (!isClaudeSessionId(sessionId) || this.sessions.has(sessionId)) continue;
+      this.sessions.set(sessionId, {
+        id: sessionId,
+        cwd: record.cwd ?? '',
+        projectName: record.cwd ? path.basename(record.cwd) : 'sessão',
+        transcriptPath: record.transcriptPath ?? null,
+        status: record.status === 'busy' ? STATUS.WORKING : STATUS.DONE,
+        title: null,
+        promptPreview: null,
+        question: null,
+        managerMessage: null,
+        lastMessage: null,
+        unread: false,
+        updatedAt: this.now(),
+        wave: null,
+        seenAlive: true,
+      });
+      added++;
+    }
+    if (added) this.emit('change');
+    return added;
+  }
+
   prune() {
     const cutoff = this.now() - this.maxAgeMs;
     let changed = false;

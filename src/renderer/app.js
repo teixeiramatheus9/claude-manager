@@ -12,6 +12,10 @@ const headerPath = document.getElementById('header-path');
 const PATHS = { sessions: '~/.claude/sessions', chat: '~/.claude/chats', config: '~/.claude/config' };
 
 function renderHeaderPath() {
+  if (mirrorSession) {
+    headerPath.textContent = `~/.claude/sessions/${mirrorSession.projectName}`;
+    return;
+  }
   const view = chatOpen ? 'chat' : settingsPop.classList.contains('hidden') ? 'sessions' : 'config';
   headerPath.textContent = PATHS[view];
 }
@@ -34,6 +38,7 @@ const STATUS_LABEL = {
 
 window.manager.onOverlayMode((mode) => {
   panelOpen = mode === 'panel';
+  if (!panelOpen) setMirrorOpen(null);
   panel.style.display = panelOpen ? 'flex' : 'none';
   tooltip.style.display = mode === 'tooltip' ? 'block' : 'none';
   if (panelOpen) window.manager.panelOpened();
@@ -141,6 +146,7 @@ function renderChatEmptyState() {
 }
 
 function setChatOpen(open) {
+  if (open) setMirrorOpen(null);
   chatOpen = open;
   chatView.classList.toggle('hidden', !open);
   sessionsContainer.classList.toggle('hidden', open);
@@ -182,6 +188,99 @@ chatSend.addEventListener('click', sendChatMessage);
 chatInput.addEventListener('keydown', (event) => {
   event.stopPropagation();
   if (event.key === 'Enter') sendChatMessage();
+});
+
+// --- session mirror: the conversation a chat had, live from its transcript ---
+const mirrorView = document.getElementById('mirror');
+const mirrorMessages = document.getElementById('mirror-messages');
+const mirrorTitle = document.getElementById('mirror-title');
+const mirrorInput = document.getElementById('mirror-input');
+const mirrorSend = document.getElementById('mirror-send');
+let mirrorSession = null;
+let mirrorTimer = null;
+
+function renderMirrorMessages(messages) {
+  const nearBottom =
+    mirrorMessages.scrollHeight - mirrorMessages.scrollTop - mirrorMessages.clientHeight < 40;
+  const firstRender = !mirrorMessages.childElementCount;
+  mirrorMessages.replaceChildren();
+  if (!messages.length) {
+    const empty = document.createElement('div');
+    empty.id = 'chat-empty';
+    empty.textContent = '# ainda não achei conversa nesse transcript';
+    mirrorMessages.append(empty);
+    return;
+  }
+  for (const message of messages) {
+    const bubble = document.createElement('div');
+    bubble.className = `chat-bubble${message.role === 'user' ? ' user' : ''}`;
+    bubble.textContent = message.text;
+    mirrorMessages.append(bubble);
+  }
+  // Follow the conversation unless the user scrolled up to read something.
+  if (nearBottom || firstRender) mirrorMessages.scrollTop = mirrorMessages.scrollHeight;
+}
+
+async function refreshMirror() {
+  if (!mirrorSession) return;
+  const messages = await window.manager.readConversation(mirrorSession.id);
+  if (mirrorSession) renderMirrorMessages(messages);
+}
+
+function setMirrorOpen(session) {
+  mirrorSession = session;
+  clearInterval(mirrorTimer);
+  mirrorTimer = null;
+  const open = Boolean(session);
+  mirrorView.classList.toggle('hidden', !open);
+  sessionsContainer.classList.toggle('hidden', open);
+  if (open) {
+    settingsPop.classList.add('hidden');
+    mirrorTitle.textContent = session.title ?? session.promptPreview ?? session.projectName;
+    mirrorMessages.replaceChildren();
+    refreshMirror();
+    // The transcript is written by another process, so the mirror polls while
+    // (and only while) it is on screen.
+    mirrorTimer = setInterval(refreshMirror, 1500);
+    mirrorInput.focus();
+  }
+  renderHeaderPath();
+}
+
+document.getElementById('mirror-back').addEventListener('click', () => setMirrorOpen(null));
+
+const MIRROR_FEEDBACK = {
+  typed: null, // the message shows up in the conversation itself
+  clipboard: '# copiado! cola no chat',
+  failed: '# não consegui enviar — tenta de novo',
+};
+
+async function sendMirrorReply() {
+  if (!mirrorSession) return;
+  const text = mirrorInput.value.trim();
+  if (!text || mirrorSend.disabled) return;
+  mirrorSend.disabled = true;
+  const mode = await window.manager.sendReply(mirrorSession.id, text);
+  mirrorSend.disabled = false;
+  const feedback = MIRROR_FEEDBACK[mode];
+  if (mode === 'typed') {
+    mirrorInput.value = '';
+    setTimeout(refreshMirror, 700);
+  }
+  if (feedback) {
+    mirrorInput.value = '';
+    mirrorInput.placeholder = feedback;
+    setTimeout(() => {
+      mirrorInput.placeholder = 'responder este chat…';
+    }, 2500);
+  }
+  mirrorInput.focus();
+}
+
+mirrorSend.addEventListener('click', sendMirrorReply);
+mirrorInput.addEventListener('keydown', (event) => {
+  event.stopPropagation();
+  if (event.key === 'Enter') sendMirrorReply();
 });
 
 // --- sound settings (volume + timbre presets, persisted locally) ---
@@ -251,7 +350,10 @@ const timbreSelect = document.getElementById('timbre');
 
 // One view at a time: the list, the config or the manager chat.
 function setSettingsOpen(open) {
-  if (open) setChatOpen(false);
+  if (open) {
+    setChatOpen(false);
+    setMirrorOpen(null);
+  }
   settingsPop.classList.toggle('hidden', !open);
   sessionsContainer.classList.toggle('hidden', open);
   renderHeaderPath();
@@ -728,6 +830,46 @@ function finishCard(card, session) {
   return card;
 }
 
+// Chats opened before the manager was up — or closed on the ✕ — never fire a
+// hook, so adoption is the only way back. The rescan is offered on a populated
+// list too: a list missing one of five chats looks just as complete as a full
+// one, so there is no state where the user can tell they need it.
+const RESCAN_LABEL = '[procurar chats abertos]';
+
+function rescanElement() {
+  const row = document.createElement('div');
+  row.className = 'rescan-row';
+  const button = document.createElement('button');
+  button.className = 'rescan';
+  button.textContent = RESCAN_LABEL;
+  const feedback = document.createElement('span');
+  feedback.className = 'rescan-feedback';
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    button.textContent = '[procurando…]';
+    feedback.textContent = '';
+    try {
+      // adopting anything fires a state event, which redraws the whole list
+      const adopted = await window.manager.rescanSessions();
+      if (!adopted) feedback.textContent = 'nenhum chat aberto além dos que eu já conheço';
+    } finally {
+      button.disabled = false;
+      button.textContent = RESCAN_LABEL;
+    }
+  });
+  row.append(button, feedback);
+  return row;
+}
+
+function emptyStateElement() {
+  const empty = document.createElement('div');
+  empty.id = 'empty';
+  const text = document.createElement('span');
+  text.textContent = '# nenhuma sessão por enquanto — manda o claude trabalhar que eu te aviso';
+  empty.append(text, rescanElement());
+  return empty;
+}
+
 function sessionElement(session) {
   const state = session.question ? 'question' : session.status;
   const card = document.createElement('div');
@@ -746,6 +888,14 @@ function sessionElement(session) {
   const time = document.createElement('span');
   time.className = 'time';
   time.textContent = `${STATUS_LABEL[state] ?? state} ${relativeTime(session.updatedAt)}`;
+  const mirror = document.createElement('button');
+  mirror.className = 'session-mirror';
+  mirror.textContent = '≡';
+  mirror.title = 'Ver a conversa';
+  mirror.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setMirrorOpen(session);
+  });
   const close = document.createElement('button');
   close.className = 'session-close';
   close.textContent = '✕';
@@ -754,7 +904,7 @@ function sessionElement(session) {
     event.stopPropagation();
     window.manager.removeSession(session.id);
   });
-  top.append(dot, name, time, close);
+  top.append(dot, name, time, mirror, close);
   card.append(top);
 
   const project = document.createElement('div');
@@ -936,13 +1086,11 @@ window.manager.onState((state) => {
 
   sessionsContainer.replaceChildren();
   if (!state.sessions.length) {
-    const empty = document.createElement('div');
-    empty.id = 'empty';
-    empty.textContent = '# nenhuma sessão por enquanto — manda o claude trabalhar que eu te aviso';
-    sessionsContainer.append(empty);
+    sessionsContainer.append(emptyStateElement());
     return;
   }
   for (const session of state.sessions) {
     sessionsContainer.append(sessionElement(session));
   }
+  sessionsContainer.append(rescanElement());
 });

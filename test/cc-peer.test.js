@@ -3,7 +3,7 @@ import net from 'node:net';
 import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { buildFrames, sendUserMessage } from '../src/main/cc-peer.js';
+import { PEER_FROM, buildFrames, sendUserMessage } from '../src/main/cc-peer.js';
 
 // Stands in for a live Claude Code session: collects every newline-delimited
 // frame a client writes to a throwaway socket.
@@ -36,14 +36,31 @@ describe('claude code peer channel', () => {
   it('builds the auth line before the user line when a token exists', () => {
     expect(buildFrames({ text: 'oi', token: 'tok', msgId: 'm1' })).toEqual([
       '{"type":"auth","token":"tok"}',
-      '{"type":"user","msg_id":"m1","message":{"role":"user","content":"oi"}}',
+      `{"type":"user","msg_id":"m1","from":"${PEER_FROM}","message":{"role":"user","content":"oi"}}`,
     ]);
   });
 
   it('omits the auth line when there is no token', () => {
     expect(buildFrames({ text: 'oi', token: null, msgId: 'm1' })).toEqual([
-      '{"type":"user","msg_id":"m1","message":{"role":"user","content":"oi"}}',
+      `{"type":"user","msg_id":"m1","from":"${PEER_FROM}","message":{"role":"user","content":"oi"}}`,
     ]);
+  });
+
+  it('identifies the sender instead of arriving as "unknown"', () => {
+    const [frame] = buildFrames({ text: 'oi', token: null, msgId: 'm1' });
+    expect(JSON.parse(frame).from).toBe(PEER_FROM);
+    // the receiver only accepts this charset in the from attribute
+    expect(PEER_FROM).toMatch(/^[A-Za-z0-9%:_/.\\-]+$/);
+  });
+
+  it('lets a user reply jump the queue', () => {
+    const [frame] = buildFrames({ text: 'oi', token: null, msgId: 'm1', priority: 'now' });
+    expect(JSON.parse(frame).priority).toBe('now');
+  });
+
+  it('sends no priority unless one is asked for', () => {
+    const [frame] = buildFrames({ text: 'oi', token: null, msgId: 'm1' });
+    expect('priority' in JSON.parse(frame)).toBe(false);
   });
 
   it('delivers both frames to a listening session', async () => {
@@ -59,7 +76,7 @@ describe('claude code peer channel', () => {
     expect(result.outcome).toBe('sent');
     expect(result.received).toEqual([
       { type: 'auth', token: 'tok' },
-      { type: 'user', msg_id: 'm1', message: { role: 'user', content: 'faz o deploy' } },
+      { type: 'user', msg_id: 'm1', from: PEER_FROM, message: { role: 'user', content: 'faz o deploy' } },
     ]);
   });
 

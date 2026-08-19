@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { ensureHooks, removeAppHooks } from '../../scripts/install-hooks.js';
 import { SessionRegistry } from './session-registry.js';
 import { startSocketServer, stopSocketServer } from './socket-server.js';
-import { readTranscriptSnapshot } from './transcript.js';
+import { readConversationTail, readTranscriptSnapshot } from './transcript.js';
 import { generateManagerMessage, humanizeNotification } from './manager-voice.js';
 import { digestMessage } from './message-digest.js';
 import { askManager, findMentionedSession } from './manager-chat.js';
@@ -20,7 +20,7 @@ import { VOICES } from './sherpa-installer.js';
 import { THEMES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
 import { setupUpdater } from './updater.js';
-import { detectTrayHost, nudgeTrayRegistration, trayMenuTemplate } from './tray.js';
+import { detectTrayHost, trayMenuTemplate } from './tray.js';
 import { installTraySupport, shouldInstallTraySupport } from './tray-support.js';
 import { killPendingClaude } from './claude-cli.js';
 import {
@@ -35,7 +35,12 @@ import {
 import { UPDATE_DONE_PHRASE, shouldAnnounce } from './update-notice.js';
 import { log } from './log.js';
 import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
-import { readSessionChannel, readLiveSessionIds } from './cc-sessions.js';
+import {
+  readSessionChannel,
+  readLiveSessionIds,
+  readAdoptableSessions,
+  claudeTranscriptPath,
+} from './cc-sessions.js';
 import { readInboundPolicy, setInboundPolicy } from './claude-settings.js';
 import { sendUserMessage } from './cc-peer.js';
 
@@ -351,15 +356,6 @@ async function setupTray() {
   });
   refreshTrayMenu();
   sendState();
-  // GNOME's appindicator drops the icon when Electron's item answers its first
-  // property reads with errors, and never looks at it again — re-registering
-  // makes it look again once the app has settled.
-  nudgeTrayRegistration({
-    pid: process.pid,
-    execFn: execFileAsync,
-    waitFn: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    log,
-  });
 }
 
 ipcMain.on('app:quit', () => (tray ? hideToTray() : app.quit()));
@@ -520,6 +516,19 @@ ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('session:remove', (_event, sessionId) => registry.remove(sessionId));
 
+// The panel's rescan: adopt the live interactive chats the hooks never
+// reported — opened before the manager was up, or closed on the ✕.
+ipcMain.handle('sessions:rescan', () => {
+  const records = readAdoptableSessions();
+  if (!records) return 0;
+  return registry.adopt(
+    records.map((record) => {
+      const transcriptPath = claudeTranscriptPath(record.cwd, record.sessionId);
+      return { ...record, transcriptPath: fs.existsSync(transcriptPath) ? transcriptPath : null };
+    }),
+  );
+});
+
 ipcMain.on('update:apply', () => {
   const version = updateStatus.ready ?? updateStatus.available;
   try {
@@ -655,6 +664,14 @@ ipcMain.handle('warp:focus', (_event, sessionId) => {
   return huntSessionTab(session);
 });
 
+// The mirror view: the conversation this chat had, straight from its
+// transcript — same file the Stop handler already reads, so no new source.
+ipcMain.handle('transcript:tail', async (_event, sessionId) => {
+  const session = registry.sessions.get(sessionId);
+  if (!session?.transcriptPath) return [];
+  return readConversationTail(session.transcriptPath);
+});
+
 ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const session = registry.sessions.get(sessionId);
   const index = Number(optionIndex);
@@ -665,8 +682,11 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const optionText = session.question?.questions?.[0]?.options?.[index];
   const channel = readSessionChannel(session.id);
   if (channel && typeof optionText === 'string' && optionText.trim()) {
+    // 'now': the chat is parked on this question, so the answer must not sit
+    // behind anything else in its queue.
     const outcome = await sendUserMessage(channel.socketPath, optionText, {
       token: channel.token,
+      priority: 'now',
     });
     if (outcome === 'sent') {
       registry.markAnswered(sessionId);
@@ -692,7 +712,12 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
 async function replyToSession(session, text) {
   const channel = session?.id ? readSessionChannel(session.id) : null;
   if (channel) {
-    const outcome = await sendUserMessage(channel.socketPath, text, { token: channel.token });
+    // A panel reply is the user reacting to this chat right now — jump the
+    // queue instead of waiting for whatever turn is in flight to finish.
+    const outcome = await sendUserMessage(channel.socketPath, text, {
+      token: channel.token,
+      priority: 'now',
+    });
     if (outcome === 'sent') return 'sent';
     log(`peer channel unusable for ${session.id} (${outcome}) — falling back to the terminal`);
   }

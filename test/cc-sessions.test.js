@@ -6,6 +6,8 @@ import {
   parsePeerKey,
   readSessionChannel,
   readLiveSessionIds,
+  readAdoptableSessions,
+  claudeTranscriptPath,
 } from '../src/main/cc-sessions.js';
 
 const SESSION_ID = '4b706711-9840-4931-8b0f-d6d51518d6ba';
@@ -176,5 +178,83 @@ describe('live session ids', () => {
       },
     });
     expect(ids).toBeNull();
+  });
+});
+
+describe('adoptable sessions', () => {
+  const record = (overrides) =>
+    JSON.stringify({
+      pid: 100,
+      sessionId: '4b706711-9840-4931-8b0f-d6d51518d6ba',
+      cwd: '/home/user/projects/projeto-alpha',
+      procStart: '999',
+      kind: 'interactive',
+      entrypoint: 'cli',
+      name: 'claude-manager-28',
+      status: 'busy',
+      ...overrides,
+    });
+
+  const read = (fileText, overrides = {}) =>
+    readAdoptableSessions({
+      dir: '/sessions',
+      readdirSync: () => ['100.json'],
+      readFileSync: () => fileText,
+      procStartFor: () => '999',
+      isAlive: () => true,
+      ...overrides,
+    });
+
+  it('lists a live interactive cli session with what the panel needs', () => {
+    expect(read(record())).toEqual([
+      {
+        sessionId: '4b706711-9840-4931-8b0f-d6d51518d6ba',
+        cwd: '/home/user/projects/projeto-alpha',
+        name: 'claude-manager-28',
+        status: 'busy',
+      },
+    ]);
+  });
+
+  // Sub-agents and headless runs are not chats the user manages.
+  it('skips sessions that are not interactive cli chats', () => {
+    expect(read(record({ kind: 'subagent' }))).toEqual([]);
+    expect(read(record({ entrypoint: 'sdk' }))).toEqual([]);
+    expect(read(record({ kind: undefined }))).toEqual([]);
+  });
+
+  it('skips a record left behind by a killed or recycled process', () => {
+    expect(read(record(), { isAlive: () => false })).toEqual([]);
+    expect(read(record(), { procStartFor: () => '4242' })).toEqual([]);
+  });
+
+  it('skips junk records without dying', () => {
+    expect(read('not json')).toEqual([]);
+    expect(read(record({ cwd: undefined }))).toEqual([]);
+  });
+
+  it('reports no registry at all as null, not as an empty list', () => {
+    const sessions = readAdoptableSessions({
+      dir: '/sessions',
+      readdirSync: () => {
+        throw new Error('ENOENT');
+      },
+    });
+    expect(sessions).toBeNull();
+  });
+});
+
+describe('transcript path convention', () => {
+  // Claude Code stores transcripts under ~/.claude/projects/<cwd with / and .
+  // flattened to ->/<sessionId>.jsonl.
+  it('derives the transcript path from cwd and session id', () => {
+    const file = claudeTranscriptPath(
+      '/home/user/projects/.claude/worktrees/alpha',
+      '4b706711-9840-4931-8b0f-d6d51518d6ba',
+      { home: '/home/user' },
+    );
+    expect(file).toBe(
+      '/home/user/.claude/projects/-home-user-projects--claude-worktrees-alpha/4b706711-9840-4931-8b0f-d6d51518d6ba.jsonl',
+    );
   });
 });

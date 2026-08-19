@@ -488,6 +488,19 @@
       .session.question .time {
         color: var(--warn);
       }
+      .session-mirror {
+        background: none;
+        border: 0;
+        padding: 0 2px;
+        font: inherit;
+        font-size: 11px;
+        line-height: 1;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .session-mirror:hover {
+        color: var(--accent);
+      }
       .session-close {
         background: none;
         border: 0;
@@ -594,6 +607,36 @@
         padding: 22px 14px;
         font-size: 11.5px;
         line-height: 1.6;
+        color: var(--dim);
+      }
+      .rescan-row {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 10px 14px;
+        font-size: 11.5px;
+      }
+      #empty .rescan-row {
+        padding: 8px 0 0;
+      }
+      .rescan {
+        background: none;
+        border: 0;
+        padding: 0;
+        font: inherit;
+        color: var(--accent);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .rescan:hover {
+        text-decoration: underline;
+      }
+      .rescan:disabled {
+        color: var(--dim);
+        cursor: default;
+        text-decoration: none;
+      }
+      .rescan-feedback {
         color: var(--dim);
       }
 
@@ -800,12 +843,50 @@
         background: var(--accent);
       }
 
+      /* --- session mirror --- */
+      #mirror-top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 14px;
+        border-bottom: 1px solid var(--hairline);
+      }
+      #mirror-back {
+        background: none;
+        border: none;
+        color: var(--muted);
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+        padding: 0;
+      }
+      #mirror-back:hover {
+        color: var(--accent);
+      }
+      #mirror-title {
+        font-size: 11px;
+        color: var(--text-3);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #mirror-send {
+        background: none;
+        border: none;
+        color: var(--accent);
+        font: inherit;
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+
       /* --- manager chat --- */
-      #chat {
+      #chat,
+      #mirror {
         display: flex;
         flex-direction: column;
       }
-      #chat-messages {
+      #chat-messages,
+      #mirror-messages {
         flex: 1;
         overflow-y: auto;
         padding: 12px 14px;
@@ -833,7 +914,8 @@
       .chat-bubble.pending {
         color: var(--dim);
       }
-      #chat-input-row {
+      #chat-input-row,
+      #mirror-input-row {
         display: flex;
         align-items: center;
         gap: 7px;
@@ -841,12 +923,14 @@
         background: var(--bg-footer);
         border-top: 1px solid var(--border);
       }
-      #chat-input-row::before {
+      #chat-input-row::before,
+      #mirror-input-row::before {
         content: '❯';
         color: var(--accent);
         font-size: 11.5px;
       }
-      #chat-input {
+      #chat-input,
+      #mirror-input {
         flex: 1;
         min-width: 0;
         background: none;
@@ -1175,6 +1259,17 @@
         <div class="setting-hint" id="update-check-feedback"></div>
       </div>
       <div id="sessions"></div>
+      <div id="mirror" class="hidden">
+        <div id="mirror-top">
+          <button id="mirror-back" title="Voltar pra lista">[&lt; voltar]</button>
+          <span id="mirror-title"></span>
+        </div>
+        <div id="mirror-messages"></div>
+        <div id="mirror-input-row">
+          <input id="mirror-input" placeholder="responder este chat…" />
+          <button id="mirror-send" title="Enviar pro chat">[enviar]</button>
+        </div>
+      </div>
       <div id="chat" class="hidden">
         <div id="chat-messages"></div>
         <div id="chat-input-row">
