@@ -267,6 +267,12 @@
       .setting-row.type-row {
         padding-left: 8px;
       }
+      .setting-hint {
+        font-size: 10px;
+        line-height: 1.35;
+        color: #a8a29e;
+        margin: -2px 0 2px;
+      }
       .setting-row.type-row span {
         font-size: 11px;
         color: #a8a29e;
@@ -694,6 +700,7 @@
             <option value="warp">Warp</option>
             <option value="gnome-terminal">GNOME Terminal</option>
             <option value="kgx">GNOME Console</option>
+            <option value="ptyxis">Ptyxis (padrão do Fedora)</option>
             <option value="kitty">Kitty</option>
             <option value="alacritty">Alacritty</option>
             <option value="konsole">Konsole</option>
@@ -709,6 +716,17 @@
           <span>Voz</span>
           <select id="voice"></select>
         </label>
+        <div class="setting-divider"></div>
+        <label class="setting-row">
+          <span>Resposta rápida no chat</span>
+          <select id="inbound">
+            <option value="default">Padrão do Claude Code</option>
+            <option value="accept">Aceitar direto</option>
+            <option value="hold">Sempre revisar</option>
+            <option value="refuse">Recusar</option>
+          </select>
+        </label>
+        <div class="setting-hint" id="inbound-hint"></div>
         <div class="setting-divider"></div>
         <label class="setting-row">
           <span>Tokens/dia <strong id="budget-label"></strong></span>

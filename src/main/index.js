@@ -17,15 +17,49 @@ import { VOICES } from './sherpa-installer.js';
 import { setupUpdater } from './updater.js';
 import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir } from './paths.js';
 import { log } from './log.js';
+import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
+import { readSessionChannel, readLiveSessionIds } from './cc-sessions.js';
+import { readInboundPolicy, setInboundPolicy } from './claude-settings.js';
+import { sendUserMessage } from './cc-peer.js';
 
-// Two window-management modes, detected from the session type:
-// - X11 ("managed"): the app moves/positions its own window — hold-anywhere
-//   drag with click detection, edge-aware flipping, persisted position.
+// Two window-management modes:
+// - X11/XWayland ("managed"): the app moves/positions its own window —
+//   hold-anywhere drag with click detection, edge-aware flipping, persisted
+//   position. mutter honours _NET_WM_STATE_ABOVE and _NET_WM_STATE_STICKY for
+//   XWayland clients, which is the only way to get a real overlay on GNOME.
 // - Wayland: the compositor owns positioning, so the bubble is a
-//   -webkit-app-region drag handle and the window only grows/shrinks in
-//   place. (XWayland is NOT an option on this Iris Xe/Mesa stack: Electron
-//   never paints its windows there, no matter the GL backend.)
-const canPositionWindows = process.env.XDG_SESSION_TYPE !== 'wayland';
+//   -webkit-app-region drag handle and the window only grows/shrinks in place.
+// The app asks for XWayland via --ozone-platform=x11 (see package.json). The
+// switch has to come from the command line: appendSwitch() from this file runs
+// too late, because Chromium picks the platform before main.js executes.
+const displayMode = resolveDisplayMode({
+  display: process.env.DISPLAY,
+  ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
+  sessionType: process.env.XDG_SESSION_TYPE,
+});
+const canPositionWindows = displayMode.managed;
+
+// The AppImage launcher drops build.linux.executableArgs, so a packaged run can
+// arrive here without the switch and silently lose the overlay. Relaunch once
+// with it; the env marker is inherited by the new process and stops any loop.
+const OZONE_RELAUNCH_MARKER = 'CLAUDE_MANAGER_OZONE_RELAUNCHED';
+
+function relaunchUnderX11IfNeeded() {
+  const needed = shouldRelaunchUnderX11({
+    display: process.env.DISPLAY,
+    platform: displayMode.platform,
+    // argv, not the command-line store: Chromium fills ozone-platform in with
+    // the platform it picked, so the store cannot tell chosen from defaulted.
+    switchPassed: process.argv.some((arg) => arg.startsWith('--ozone-platform')),
+    alreadyRelaunched: Boolean(process.env[OZONE_RELAUNCH_MARKER]),
+  });
+  if (!needed) return false;
+  log('relaunching with --ozone-platform=x11 (the launcher did not pass it)');
+  process.env[OZONE_RELAUNCH_MARKER] = '1';
+  app.relaunch({ args: [...process.argv.slice(1), '--ozone-platform=x11'] });
+  app.exit(0);
+  return true;
+}
 
 // Associates the running window with the installed .desktop entry so desktop
 // environments show the right icon/name for packaged builds.
@@ -44,6 +78,9 @@ const MODE_SIZES = {
 const BUBBLE_BOX = MODE_SIZES.bubble.width;
 const CLICK_THRESHOLD_PX = 6;
 const PRUNE_INTERVAL_MS = 10 * 60 * 1000;
+// Short, because a closed terminal should leave the list right away rather
+// than sit there claiming the chat is still working.
+const LIVENESS_INTERVAL_MS = 15 * 1000;
 
 const registry = new SessionRegistry();
 let managerConfig = loadConfig(configFile);
@@ -333,6 +370,7 @@ function sessionSearchKeys(session) {
 async function huntSessionTab(session) {
   const result = await terminal.focusChatTab(sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
+    allowInputInjection: displayMode.canInjectInput,
     wave: session?.wave,
   });
   if (session?.id) {
@@ -354,23 +392,56 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const session = registry.sessions.get(sessionId);
   const index = Number(optionIndex);
   if (!session || !Number.isInteger(index) || index < 0) return 'failed';
+
+  // Sending the option's own text beats simulating Down x N + Return: it needs
+  // no window, and it cannot land on the wrong option if the list scrolled.
+  const optionText = session.question?.questions?.[0]?.options?.[index];
+  const channel = readSessionChannel(session.id);
+  if (channel && typeof optionText === 'string' && optionText.trim()) {
+    const outcome = await sendUserMessage(channel.socketPath, optionText, {
+      token: channel.token,
+    });
+    if (outcome === 'sent') {
+      registry.markAnswered(sessionId);
+      return 'answered';
+    }
+    log(`peer channel unusable for answer on ${session.id} (${outcome})`);
+  }
+
   const result = await terminal.answerQuestionInWarp(sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
+    allowInputInjection: displayMode.canInjectInput,
     wave: session?.wave,
   });
   if (result === 'answered') registry.markAnswered(sessionId);
   return result;
 });
 
-ipcMain.handle('warp:reply', (_event, { sessionId, text }) => {
+// Reply path, in order of preference:
+// 1. The session's own unix socket — works on Wayland, on any terminal, and
+//    cannot deliver to the wrong chat because it is addressed by session id.
+// 2. The terminal window (xdotool), for builds where the messaging channel is
+//    gated off or the session predates it.
+async function replyToSession(session, text) {
+  const channel = session?.id ? readSessionChannel(session.id) : null;
+  if (channel) {
+    const outcome = await sendUserMessage(channel.socketPath, text, { token: channel.token });
+    if (outcome === 'sent') return 'sent';
+    log(`peer channel unusable for ${session.id} (${outcome}) — falling back to the terminal`);
+  }
+  return terminal.sendReplyToWarp(sessionSearchKeys(session), text, {
+    writeClipboard: (value) => clipboard.writeText(value),
+    terminal: managerConfig.terminal,
+    allowInputInjection: displayMode.canInjectInput,
+    wave: session?.wave,
+  });
+}
+
+ipcMain.handle('warp:reply', async (_event, { sessionId, text }) => {
   const session = registry.sessions.get(sessionId);
   const reply = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
   if (!reply) return 'failed';
-  return terminal.sendReplyToWarp(sessionSearchKeys(session), reply, {
-    writeClipboard: (value) => clipboard.writeText(value),
-    terminal: managerConfig.terminal,
-    wave: session?.wave,
-  });
+  return replyToSession(session, reply);
 });
 
 // Manual drag (managed/X11 mode only): the renderer reports press/release on
@@ -418,29 +489,62 @@ ipcMain.on('drag:end', () => {
 // Self-registers the Claude Code hooks on startup, so packaged installs
 // (AppImage/deb/rpm) work out of the box. ELECTRON_RUN_AS_NODE turns this
 // app's own binary into the hook runtime — no system Node required.
+const claudeSettingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+
+function readClaudeSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf8'));
+  } catch {
+    return {}; // no settings yet — start from empty
+  }
+}
+
+// Every write backs the file up first: this is the user's global Claude Code
+// config, not the app's own.
+function writeClaudeSettings(next) {
+  if (fs.existsSync(claudeSettingsPath)) {
+    fs.copyFileSync(claudeSettingsPath, `${claudeSettingsPath}.claude-manager-${Date.now()}.bak`);
+  }
+  fs.mkdirSync(path.dirname(claudeSettingsPath), { recursive: true });
+  fs.writeFileSync(claudeSettingsPath, `${JSON.stringify(next, null, 2)}\n`);
+}
+
 function ensureHooksInstalled() {
   try {
-    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
     const hookScript = path.join(currentDir, '..', 'hook', 'hook-emit.js');
     const command = `ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${hookScript}"`;
-    let settings = {};
-    try {
-      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    } catch {
-      // no settings yet — start from empty
-    }
+    const settings = readClaudeSettings();
     const next = ensureHooks(settings, command);
     if (JSON.stringify(next) === JSON.stringify(settings)) return;
-    if (fs.existsSync(settingsPath)) {
-      fs.copyFileSync(settingsPath, `${settingsPath}.claude-manager-${Date.now()}.bak`);
-    }
-    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    fs.writeFileSync(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
+    writeClaudeSettings(next);
     log(`hooks self-installed: ${command}`);
   } catch (error) {
     log(`ensureHooksInstalled failed: ${error}`);
   }
 }
+
+// crossSessionInbound decides what a session does with the quick reply this app
+// sends. It lives in the user's Claude Code settings, so the app only ever
+// writes the user level — a repo or managed setting can still tighten it, and
+// the panel says so instead of promising an outcome.
+ipcMain.handle('inbound:get', () => readInboundPolicy(readClaudeSettings()));
+
+ipcMain.handle('inbound:set', (_event, value) => {
+  const settings = readClaudeSettings();
+  const next = setInboundPolicy(settings, value);
+  if (!next) {
+    log(`inbound policy refused: ${value}`);
+    return readInboundPolicy(settings);
+  }
+  try {
+    writeClaudeSettings(next);
+    log(`crossSessionInbound set to ${value}`);
+  } catch (error) {
+    log(`inbound policy write failed: ${error}`);
+    return readInboundPolicy(settings);
+  }
+  return readInboundPolicy(next);
+});
 
 function hydrateRegistry() {
   try {
@@ -449,6 +553,12 @@ function hydrateRegistry() {
   } catch {
     // first run or corrupt file — start fresh
   }
+}
+
+// Drops the sessions whose terminal was closed: they never send a hook on the
+// way out, so without this they linger frozen on their last status.
+function reapDeadSessions() {
+  registry.reconcileLiveSessions(readLiveSessionIds());
 }
 
 let saveTimer = null;
@@ -469,13 +579,21 @@ function scheduleSessionsSave() {
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
 app.whenReady().then(() => {
+  if (relaunchUnderX11IfNeeded()) return;
+  log(
+    `display mode: platform=${displayMode.platform} managed=${displayMode.managed} `.concat(
+      `canInjectInput=${displayMode.canInjectInput}`,
+    ),
+  );
   ensureHooksInstalled();
   hydrateRegistry();
+  reapDeadSessions();
   createMainWindow();
   startSocketServer(socketPath, onHookEvent, log);
   registry.on('change', sendState);
   registry.on('change', scheduleSessionsSave);
   setInterval(() => registry.prune(), PRUNE_INTERVAL_MS);
+  setInterval(reapDeadSessions, LIVENESS_INTERVAL_MS);
   updaterHandle = setupUpdater({ onStatus: onUpdateStatus, log });
 });
 

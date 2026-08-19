@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('manager', {
   answerQuestion: (sessionId, optionIndex) =>
     ipcRenderer.invoke('warp:answer', { sessionId, optionIndex }),
   chatWithManager: (text) => ipcRenderer.invoke('manager:chat', text),
+  getInboundPolicy: () => ipcRenderer.invoke('inbound:get'),
+  setInboundPolicy: (value) => ipcRenderer.invoke('inbound:set', value),
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (partial) => ipcRenderer.invoke('config:set', partial),
   onState: (callback) => ipcRenderer.on('state', (_event, state) => callback(state)),

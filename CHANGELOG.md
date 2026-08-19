@@ -18,6 +18,18 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 - Botão "Buscar versão mais recente" nas configurações; a atualização agora instala direto pelo app e relança na versão nova — deb/rpm via autenticação nativa do sistema, macOS trocando o app no /Applications automaticamente
 - Pipeline de release com um job por pacote (AppImage, deb, rpm, macOS), espelho apt confiável com retry/timeout, e publicação só quando TODOS os pacotes estão prontos
 
+### Feats
+- Bolha roda sob XWayland: sobreposição real, arrastar e posição persistida voltam a funcionar no GNOME/Wayland (#2)
+- Resposta rápida vai direto pelo socket da sessão do Claude Code, sem depender de terminal nem de servidor gráfico, e sem risco de cair no chat errado (#2)
+- Política de mensagens entre sessões configurável no painel (#2)
+- Ptyxis reconhecido no fallback de terminal; `wmctrl` deixa de ser necessário e `xdotool` passa a ser declarado como dependência dos pacotes (#2)
+
+### Fixes
+- Sessão cujo terminal foi fechado some da lista em vez de ficar congelada por horas dizendo que ainda está trabalhando (#2)
+- Nada de injetar teclas no Wayland, onde isso abria pedido de acesso remoto e falhava (#2)
+- Bolha se relança sob XWayland quando o AppImage perde a flag de plataforma (#2)
+- Manager não afirma mais que entregou uma resposta que o canal não conseguiu confirmar (#2)
+
 ## v0.2.1 — 2026-08-19
 
 ### Feats

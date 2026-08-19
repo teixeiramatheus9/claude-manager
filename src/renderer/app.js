@@ -289,6 +289,39 @@ ttsCheckbox.addEventListener('change', () => {
 });
 
 // --- manager config (terminal + daily token budget) ---
+const inboundSelect = document.getElementById('inbound');
+const inboundHint = document.getElementById('inbound-hint');
+
+// Each option carries its real consequence. "Aceitar direto" loosens a gate that
+// protects sessions running without permission prompts, and it does so for every
+// local process — not just this app — so the panel says that out loud.
+const INBOUND_HINTS = {
+  default: 'Entrega quando os modos de permissão casam; senão o chat pede sua confirmação.',
+  accept: '⚠ Entrega sem confirmação — vale pra qualquer processo local, não só pro gerente.',
+  hold: 'Toda mensagem espera você aprovar no chat.',
+  refuse: 'O chat não recebe nada do gerente.',
+};
+
+function renderInboundHint(value) {
+  const base = INBOUND_HINTS[value] ?? '';
+  // The user level is all this app writes; a repo or managed setting can still
+  // tighten it, and promising otherwise would be a lie.
+  inboundHint.textContent = `${base} Configurações do repositório ou da organização podem restringir por cima.`;
+}
+
+window.manager.getInboundPolicy().then((value) => {
+  inboundSelect.value = value;
+  renderInboundHint(value);
+});
+
+inboundSelect.addEventListener('change', async () => {
+  const applied = await window.manager.setInboundPolicy(inboundSelect.value);
+  // Trust what main reports back, not what was clicked: a rejected or failed
+  // write must not leave the panel showing a value that is not on disk.
+  inboundSelect.value = applied;
+  renderInboundHint(applied);
+});
+
 const terminalSelect = document.getElementById('terminal');
 const voiceSelect = document.getElementById('voice');
 const budgetInput = document.getElementById('budget');
@@ -430,15 +463,19 @@ function replyElement(session) {
   input.value = replyDrafts.get(session.id) ?? '';
   const sendButton = document.createElement('button');
   sendButton.innerHTML = SEND_SVG;
-  sendButton.title = 'Enviar pro chat no Warp';
+  sendButton.title = 'Enviar pro chat';
   const feedback = document.createElement('div');
   feedback.className = 'reply-feedback';
   feedback.textContent = replyFeedback.get(session.id) ?? '';
 
   const FEEDBACK_TEXT = {
-    typed: 'Enviado pro chat no Warp ✓',
+    sent: 'Enviado pro chat',
+    typed: 'Digitado no terminal ✓',
     clipboard: 'Copiado! Cola no chat com Ctrl+V',
     failed: 'Não consegui enviar 😅 tenta de novo',
+    'terminal-not-in-x': 'Não achei o terminal. Ele roda em Wayland — abre com GDK_BACKEND=x11',
+    'no-x-windows': 'Sem acesso às janelas: instala o xdotool (sudo dnf install xdotool)',
+    'xdotool-failed': 'O xdotool falhou 😅 olha o log em ~/.config/claude-manager/log',
   };
 
   async function send() {
@@ -449,7 +486,7 @@ function replyElement(session) {
     sendButton.disabled = false;
     replyFeedback.set(session.id, FEEDBACK_TEXT[mode] ?? '');
     feedback.textContent = replyFeedback.get(session.id);
-    if (mode === 'typed') {
+    if (mode === 'sent' || mode === 'typed') {
       replyDrafts.delete(session.id);
       input.value = '';
     }
@@ -564,11 +601,13 @@ function sessionElement(session) {
             const result = await window.manager.answerQuestion(session.id, optionIndex);
             chip.disabled = false;
             if (result !== 'answered') {
+              const ANSWER_FEEDBACK = {
+                'not-found': 'Não achei a aba do chat — responde por lá',
+                'needs-terminal': 'Abri o terminal pra você — escolhe a opção por lá',
+              };
               replyFeedback.set(
                 session.id,
-                result === 'not-found'
-                  ? 'Não achei a aba do chat — responde por lá'
-                  : 'Não consegui responder 😅 tenta por lá',
+                ANSWER_FEEDBACK[result] ?? 'Não consegui responder 😅 tenta por lá',
               );
               const feedbackElement = card.querySelector('.reply-feedback');
               if (feedbackElement) feedbackElement.textContent = replyFeedback.get(session.id);

@@ -4,18 +4,38 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 const REPLY_TYPE_DELAY_MS = 350;
 
-export function parseWindowList(wmctrlOutput) {
-  return wmctrlOutput
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const parts = line.split(/\s+/);
-      if (parts.length < 4) return null;
-      const [id, , wmClass, , ...titleParts] = parts;
-      return { id, wmClass, title: titleParts.join(' ') };
-    })
-    .filter(Boolean);
+// Window listing without wmctrl: xdotool prints ids, then class and title come
+// one query at a time. --onlyvisible is deliberately NOT used — it reported 1
+// window out of 22 on GNOME/XWayland, hiding the very terminal we look for.
+export async function listWindows({ execFn = execFileAsync } = {}) {
+  let ids;
+  try {
+    const { stdout } = await execFn('xdotool', ['search', '--class', '.']);
+    ids = String(stdout ?? '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+  } catch {
+    return []; // xdotool missing or no X display — the caller names the cause
+  }
+
+  const windows = [];
+  for (const id of ids) {
+    try {
+      const [classResult, nameResult] = await Promise.all([
+        execFn('xdotool', ['getwindowclassname', id]),
+        execFn('xdotool', ['getwindowname', id]),
+      ]);
+      windows.push({
+        id,
+        wmClass: String(classResult.stdout ?? '').trim(),
+        title: String(nameResult.stdout ?? '').trim(),
+      });
+    } catch {
+      // Window closed between the search and the query — skip it.
+    }
+  }
+  return windows;
 }
 
 // User-selectable terminal apps. classHint filters windows by WM_CLASS;
@@ -31,6 +51,12 @@ export const TERMINALS = {
     hasTabs: true,
   },
   kgx: { label: 'GNOME Console', classHint: 'kgx', nextTabKey: 'ctrl+Next', hasTabs: true },
+  ptyxis: {
+    label: 'Ptyxis (padrão do Fedora)',
+    classHint: 'ptyxis',
+    nextTabKey: 'ctrl+Page_Down',
+    hasTabs: true,
+  },
   kitty: { label: 'Kitty', classHint: 'kitty', nextTabKey: 'ctrl+shift+bracketright', hasTabs: true },
   alacritty: { label: 'Alacritty', classHint: 'alacritty', nextTabKey: null, hasTabs: false },
   konsole: { label: 'Konsole', classHint: 'konsole', nextTabKey: 'shift+Right', hasTabs: true },
@@ -53,6 +79,7 @@ const TERMINAL_CLASS_HINTS = [
   'tilix',
   'xterm',
   'kgx',
+  'ptyxis',
   'terminator',
   'wezterm',
 ];
@@ -104,12 +131,24 @@ export function titleMatchesKeys(title, keys) {
 // until it matches the chat, wraps around, or hits the safety cap.
 export async function focusChatTab(
   searchKeys,
-  { execFn = execFileAsync, delayMs = 200, maxTabs = 12, terminal = 'auto' } = {},
+  {
+    execFn = execFileAsync,
+    delayMs = 200,
+    maxTabs = 12,
+    terminal = 'auto',
+    allowInputInjection = true,
+  } = {},
 ) {
   try {
     const spec = terminalSpec(terminal);
-    const { stdout } = await execFn('wmctrl', ['-lx']);
-    const windows = parseWindowList(stdout).filter(isTerminalWindow);
+    const allWindows = await listWindows({ execFn });
+    if (!allWindows.length) {
+      return { focused: false, tabFound: false, matchedTitle: null, cause: 'no-x-windows' };
+    }
+    const windows = allWindows.filter(isTerminalWindow);
+    if (!windows.length) {
+      return { focused: false, tabFound: false, matchedTitle: null, cause: 'terminal-not-in-x' };
+    }
     // Windows of the chosen terminal (Warp when on auto) get priority and
     // are the only ones whose tabs we cycle through.
     const preferredHint = spec.classHint ?? 'warp';
@@ -122,8 +161,8 @@ export async function focusChatTab(
     const directMatches = windows.filter((window) => matches(window.title));
     const direct = directMatches.find(isPreferred) ?? directMatches[0];
     if (direct) {
-      await execFn('wmctrl', ['-ia', direct.id]);
-      return { focused: true, tabFound: true, matchedTitle: direct.title };
+      await execFn('xdotool', ['windowactivate', direct.id]);
+      return { focused: true, tabFound: true, matchedTitle: direct.title, cause: null };
     }
 
     const getTitle = async (id) => {
@@ -131,19 +170,24 @@ export async function focusChatTab(
       return String(result.stdout ?? '').trim();
     };
 
-    if (spec.hasTabs && spec.nextTabKey) {
+    // Cycling tabs means pressing keys, which is XTEST. On Wayland that both
+    // prompts the user for remote access and silently fails, so it is skipped
+    // and the caller settles for focusing the right window.
+    if (allowInputInjection && spec.hasTabs && spec.nextTabKey) {
       for (const candidate of windows.filter(isPreferred)) {
-        await execFn('wmctrl', ['-ia', candidate.id]);
+        await execFn('xdotool', ['windowactivate', candidate.id]);
         await sleep(delayMs);
         const initialTitle = await getTitle(candidate.id);
         if (matches(initialTitle)) {
-          return { focused: true, tabFound: true, matchedTitle: initialTitle };
+          return { focused: true, tabFound: true, matchedTitle: initialTitle, cause: null };
         }
         for (let press = 0; press < maxTabs; press++) {
           await execFn('xdotool', ['key', '--clearmodifiers', spec.nextTabKey]);
           await sleep(delayMs);
           const title = await getTitle(candidate.id);
-          if (matches(title)) return { focused: true, tabFound: true, matchedTitle: title };
+          if (matches(title)) {
+            return { focused: true, tabFound: true, matchedTitle: title, cause: null };
+          }
           if (title === initialTitle) break; // wrapped all the way around
         }
       }
@@ -151,12 +195,12 @@ export async function focusChatTab(
 
     const anyPreferred = windows.find(isPreferred);
     if (anyPreferred) {
-      await execFn('wmctrl', ['-ia', anyPreferred.id]);
-      return { focused: true, tabFound: false, matchedTitle: null };
+      await execFn('xdotool', ['windowactivate', anyPreferred.id]);
+      return { focused: true, tabFound: false, matchedTitle: null, cause: null };
     }
-    return { focused: false, tabFound: false, matchedTitle: null };
+    return { focused: false, tabFound: false, matchedTitle: null, cause: 'terminal-not-in-x' };
   } catch {
-    return { focused: false, tabFound: false, matchedTitle: null };
+    return { focused: false, tabFound: false, matchedTitle: null, cause: 'xdotool-failed' };
   }
 }
 
@@ -166,9 +210,21 @@ export async function focusChatTab(
 export async function answerQuestionInWarp(
   searchKeys,
   optionIndex,
-  { execFn = execFileAsync, delayMs = REPLY_TYPE_DELAY_MS, terminal = 'auto' } = {},
+  {
+    execFn = execFileAsync,
+    delayMs = REPLY_TYPE_DELAY_MS,
+    terminal = 'auto',
+    allowInputInjection = true,
+  } = {},
 ) {
-  const { focused, tabFound } = await focusChatTab(searchKeys, { execFn, delayMs, terminal });
+  const { focused, tabFound } = await focusChatTab(searchKeys, {
+    execFn,
+    delayMs,
+    terminal,
+    allowInputInjection,
+  });
+  // The terminal is focused either way, so the user can answer by hand.
+  if (!allowInputInjection) return 'needs-terminal';
   if (!focused || !tabFound) return 'not-found';
   try {
     await sleep(delayMs);
@@ -194,7 +250,13 @@ export async function focusWarpWindow(projectName, execFn = execFileAsync) {
 export async function sendReplyToWarp(
   searchKeys,
   text,
-  { execFn = execFileAsync, writeClipboard, delayMs = REPLY_TYPE_DELAY_MS, terminal = 'auto' } = {},
+  {
+    execFn = execFileAsync,
+    writeClipboard,
+    delayMs = REPLY_TYPE_DELAY_MS,
+    terminal = 'auto',
+    allowInputInjection = true,
+  } = {},
 ) {
   const clipboardFallback = () => {
     try {
@@ -205,8 +267,16 @@ export async function sendReplyToWarp(
     }
   };
 
-  const { focused } = await focusChatTab(searchKeys, { execFn, delayMs, terminal });
+  const { focused } = await focusChatTab(searchKeys, {
+    execFn,
+    delayMs,
+    terminal,
+    allowInputInjection,
+  });
   if (!focused) return clipboardFallback();
+  // Typing is XTEST: refused on Wayland, so the reply goes to the clipboard
+  // with the terminal already focused and waiting for a paste.
+  if (!allowInputInjection) return clipboardFallback();
 
   try {
     // Give the window manager a beat to actually move focus before typing.
