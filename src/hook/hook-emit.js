@@ -10,7 +10,11 @@ if (process.env.CLAUDE_MANAGER_INTERNAL === '1') process.exit(0);
 
 const socketPath =
   process.env.CLAUDE_MANAGER_SOCKET ??
-  path.join(os.homedir(), '.config', 'claude-manager', 'manager.sock');
+  (process.platform === 'win32'
+    ? // must mirror managerSocketPath() in src/main/paths.js (standalone file,
+      // no imports allowed)
+      `\\\\.\\pipe\\claude-manager-${os.userInfo().username.replace(/[^A-Za-z0-9_-]/g, '-')}`
+    : path.join(os.homedir(), '.config', 'claude-manager', 'manager.sock'));
 
 // Hard safety net: whatever happens, get out of Claude Code's way.
 setTimeout(() => process.exit(0), 3000);
@@ -18,6 +22,7 @@ setTimeout(() => process.exit(0), 3000);
 function fallbackNotify(event) {
   const eventName = event?.hook_event_name;
   if (eventName !== 'Stop' && eventName !== 'Notification') return;
+  if (process.platform === 'win32') return; // no fast CLI notifier — stay silent
   const projectName = event?.cwd ? path.basename(event.cwd) : 'uma sessão';
   const body =
     eventName === 'Stop'
@@ -28,7 +33,9 @@ function fallbackNotify(event) {
       process.platform === 'darwin'
         ? ['osascript', ['-e', `display notification ${JSON.stringify(body)} with title "Claude Manager"`]]
         : ['notify-send', ['Claude Manager', body]];
-    spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
+    const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+    child.on('error', () => {}); // missing binary must never break exit 0
+    child.unref();
   } catch {
     // no notifier available, nothing else to do
   }

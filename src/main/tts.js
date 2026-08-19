@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DEFAULT_VOICE, VOICES, installVoice, isVoiceInstalled, voicePaths } from './sherpa-installer.js';
+import { DEFAULT_VOICE, VOICES, installVoice, isVoiceInstalled, runtimeName, voicePaths } from './sherpa-installer.js';
+import { psQuote } from './win32-native.js';
 import { applyGain } from './wav-gain.js';
 import { configDir } from './paths.js';
 import { log } from './log.js';
@@ -34,13 +35,48 @@ export function stopSpeaking() {
   processes = [];
 }
 
+// Pure command builders so every platform's spawn line is unit-testable.
+export function playerCommand(wavFile, platform = process.platform) {
+  if (platform === 'darwin') return ['afplay', [wavFile]];
+  if (platform === 'win32') {
+    return [
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `(New-Object Media.SoundPlayer ${psQuote(wavFile)}).PlaySync()`,
+      ],
+    ];
+  }
+  return ['aplay', ['-q', wavFile]];
+}
+
+export function systemVoiceCommand(text, volume, platform = process.platform, useVoiceFlag = true) {
+  if (platform === 'darwin') {
+    // `say` takes the volume inline.
+    const spoken = volume < 100 ? `[[volm ${(volume / 100).toFixed(2)}]]${text}` : text;
+    return ['say', useVoiceFlag ? ['-v', 'Luciana', '--', spoken] : ['--', spoken]];
+  }
+  if (platform === 'win32') {
+    const level = Math.max(0, Math.min(100, Math.round(volume)));
+    const script = [
+      'Add-Type -AssemblyName System.Speech',
+      '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer',
+      `$s.Volume = ${level}`,
+      "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -eq 'pt-BR' } | Select-Object -First 1",
+      'if ($v) { $s.SelectVoice($v.VoiceInfo.Name) }',
+      `$s.Speak(${psQuote(text)})`,
+    ].join('; ');
+    return ['powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]];
+  }
+  // spd-say wants -100..100.
+  return ['spd-say', ['-l', 'pt-BR', '-i', String(Math.round(volume * 2 - 100)), '--', text]];
+}
+
 // The system voice covers the gap while a model downloads.
 function speakWithSystemVoice(text, spawnFn, volume = 100, useVoiceFlag = true) {
-  // `say` takes the volume inline; spd-say wants -100..100.
-  const spoken = darwin && volume < 100 ? `[[volm ${(volume / 100).toFixed(2)}]]${text}` : text;
-  const [command, args] = darwin
-    ? ['say', useVoiceFlag ? ['-v', 'Luciana', '--', spoken] : ['--', spoken]]
-    : ['spd-say', ['-l', 'pt-BR', '-i', String(Math.round(volume * 2 - 100)), '--', text]];
+  const [command, args] = systemVoiceCommand(text, volume, process.platform, useVoiceFlag);
   const child = spawnFn(command, args, { stdio: 'ignore' });
   child.on('error', (error) => log(`${command} failed: ${error}`));
   if (darwin && useVoiceFlag) {
@@ -56,10 +92,15 @@ function speakWithSystemVoice(text, spawnFn, volume = 100, useVoiceFlag = true) 
 export function speakNeural(text, voiceId, spawnFn = spawn, volume = 100) {
   const { binary, libDir, args } = voicePaths(sherpaDir, voiceId);
   const wavFile = path.join(os.tmpdir(), 'claude-manager-tts.wav');
+  const env = { ...process.env, DYLD_LIBRARY_PATH: libDir, LD_LIBRARY_PATH: libDir };
+  if (process.platform === 'win32') {
+    // Windows finds DLLs through PATH, not LD_LIBRARY_PATH.
+    env.PATH = `${libDir};${path.dirname(binary)};${env.PATH ?? ''}`;
+  }
   const synth = spawnFn(
     binary,
     [...args, '--num-threads=4', `--output-filename=${wavFile}`, text],
-    { env: { ...process.env, DYLD_LIBRARY_PATH: libDir, LD_LIBRARY_PATH: libDir }, stdio: 'ignore' },
+    { env, stdio: 'ignore' },
   );
   processes = [synth];
   synth.on('error', (error) => log(`sherpa failed: ${error}`));
@@ -72,15 +113,15 @@ export function speakNeural(text, voiceId, spawnFn = spawn, volume = 100) {
         log(`gain failed: ${error}`);
       }
     }
-    const player = spawnFn(darwin ? 'afplay' : 'aplay', darwin ? [wavFile] : ['-q', wavFile], {
-      stdio: 'ignore',
-    });
+    const [playCommand, playArgs] = playerCommand(wavFile);
+    const player = spawnFn(playCommand, playArgs, { stdio: 'ignore' });
     processes = [player];
     player.on('error', (error) => log(`player failed: ${error}`));
   });
 }
 
 function ensureVoiceInBackground(voiceId) {
+  if (!runtimeName()) return; // no sherpa build for this platform — system voice only
   if (downloading.has(voiceId) || isVoiceInstalled(sherpaDir, voiceId)) return;
   downloading.add(voiceId);
   onDownloadStatus(voiceId);

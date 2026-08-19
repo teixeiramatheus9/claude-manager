@@ -11,8 +11,10 @@
     "hooks:remove": "node scripts/install-hooks.js --remove",
     "autostart:install": "node scripts/install-autostart.js",
     "autostart:remove": "node scripts/install-autostart.js --remove",
+    "start:win": "electron .",
     "dist": "electron-builder --linux",
-    "dist:mac": "electron-builder --mac"
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
   },
   "author": "teixeiramatheus9 <teixeiramatheus9@users.noreply.github.com>",
   "license": "MIT",
@@ -59,6 +61,12 @@
       "icon": "assets/icon.png",
       "category": "public.app-category.utilities",
       "identity": null
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.png"
     },
     "publish": {
       "provider": "github",

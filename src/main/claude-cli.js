@@ -31,48 +31,74 @@ export function killPendingClaude() {
   pending.clear();
 }
 
-export function runClaude({ prompt, timeoutMs = 15000, spawnFn = spawn }) {
+// npm installs `claude` as claude.cmd on Windows, which spawn() without a
+// shell cannot execute — so win32 tries the .cmd variant after ENOENT.
+// shell:true is not an option: the prompt is arbitrary text.
+function defaultCommands() {
+  return process.platform === 'win32' ? ['claude', 'claude.cmd'] : ['claude'];
+}
+
+export function runClaude({
+  prompt,
+  timeoutMs = 15000,
+  spawnFn = spawn,
+  commands = defaultCommands(),
+}) {
   return new Promise((resolve) => {
-    let settled = false;
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      if (child) pending.delete(child);
-      resolve(value);
-    };
+    const tryCommand = (index) => {
+      let settled = false;
+      let child;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        if (child) pending.delete(child);
+        resolve(value);
+      };
 
-    let child;
-    try {
-      child = spawnFn('claude', ['-p', prompt, '--model', 'haiku', '--output-format', 'json'], {
-        env: { ...process.env, CLAUDE_MANAGER_INTERNAL: '1' },
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
-    } catch {
-      finish(null);
-      return;
-    }
-
-    pending.add(child);
-    let stdout = '';
-    const timer = setTimeout(() => {
       try {
-        child.kill('SIGKILL');
+        child = spawnFn(
+          commands[index],
+          ['-p', prompt, '--model', 'haiku', '--output-format', 'json'],
+          {
+            env: { ...process.env, CLAUDE_MANAGER_INTERNAL: '1' },
+            stdio: ['ignore', 'pipe', 'ignore'],
+          },
+        );
       } catch {
-        // already dead
+        if (index + 1 < commands.length) tryCommand(index + 1);
+        else finish(null);
+        return;
       }
-      finish(null);
-    }, timeoutMs);
 
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-    });
-    child.on('error', () => {
-      clearTimeout(timer);
-      finish(null);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      finish(code === 0 ? parseCliJson(stdout) : null);
-    });
+      pending.add(child);
+      let stdout = '';
+      const timer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // already dead
+        }
+        finish(null);
+      }, timeoutMs);
+
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk;
+      });
+      child.on('error', (error) => {
+        clearTimeout(timer);
+        if (error?.code === 'ENOENT' && index + 1 < commands.length) {
+          settled = true; // dead attempt must not resolve later via 'close'
+          pending.delete(child);
+          tryCommand(index + 1);
+          return;
+        }
+        finish(null);
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        finish(code === 0 ? parseCliJson(stdout) : null);
+      });
+    };
+    tryCommand(0);
   });
 }

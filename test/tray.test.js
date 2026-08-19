@@ -59,6 +59,10 @@ describe('detectTrayHost', () => {
     await expect(detectTrayHost({ platform: 'darwin', execFn: shouldNotRun })).resolves.toBe(false);
   });
 
+  it('always has a tray on Windows: the shell notification area is built in', async () => {
+    await expect(detectTrayHost({ platform: 'win32', execFn: shouldNotRun })).resolves.toBe(true);
+  });
+
   it('asks the session bus on Linux', async () => {
     const execFn = async () => ({ stdout: "('org.kde.StatusNotifierWatcher',)" });
     await expect(detectTrayHost({ platform: 'linux', execFn })).resolves.toBe(true);

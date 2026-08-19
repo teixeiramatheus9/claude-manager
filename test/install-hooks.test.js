@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { addHooks, removeAppHooks, removeHooks, ensureHooks } from '../scripts/install-hooks.js';
+import {
+  HOOK_MARKER,
+  addHooks,
+  buildHookCommand,
+  ensureHooks,
+  removeAppHooks,
+  removeHooks,
+} from '../scripts/install-hooks.js';
 
 const COMMAND = 'node "/home/user/Claude Manager/src/hook/hook-emit.js"';
 
@@ -71,5 +78,49 @@ describe('install-hooks', () => {
       .flatMap((group) => group.hooks ?? [])
       .map((hook) => hook.command);
     expect(commands).toEqual(['ferramenta-de-terceiro']);
+  });
+});
+
+describe('buildHookCommand', () => {
+  it('uses the POSIX env prefix off Windows', () => {
+    const { command, shim } = buildHookCommand({
+      platform: 'linux',
+      execPath: '/opt/Claude Manager/claude-manager',
+      hookScript: '/opt/Claude Manager/src/hook/hook-emit.js',
+      shimDir: '/home/u/.config/claude-manager',
+    });
+    expect(command).toBe(
+      'ELECTRON_RUN_AS_NODE=1 "/opt/Claude Manager/claude-manager" "/opt/Claude Manager/src/hook/hook-emit.js"',
+    );
+    expect(shim).toBeNull();
+  });
+
+  it('writes a cmd shim on win32 because VAR=1 prefixes are POSIX-only', () => {
+    const { command, shim } = buildHookCommand({
+      platform: 'win32',
+      execPath: 'C:\\Program Files\\Claude Manager\\Claude Manager.exe',
+      hookScript: 'C:\\Program Files\\Claude Manager\\src\\hook\\hook-emit.js',
+      shimDir: 'C:\\Users\\u\\.config\\claude-manager',
+    });
+    expect(command).toBe('"C:\\Users\\u\\.config\\claude-manager\\hook-emit.cmd"');
+    expect(shim.path).toBe('C:\\Users\\u\\.config\\claude-manager\\hook-emit.cmd');
+    expect(shim.content).toBe(
+      '@echo off\r\n' +
+        'set ELECTRON_RUN_AS_NODE=1\r\n' +
+        '"C:\\Program Files\\Claude Manager\\Claude Manager.exe" "C:\\Program Files\\Claude Manager\\src\\hook\\hook-emit.js" %*\r\n',
+    );
+  });
+
+  it('marker matches both the script command and the shim command', () => {
+    expect('node "/x/src/hook/hook-emit.js"').toContain(HOOK_MARKER);
+    expect('"C:\\Users\\u\\.config\\claude-manager\\hook-emit.cmd"').toContain(HOOK_MARKER);
+  });
+
+  it('ensureHooks migrates a stale POSIX command to the shim command', () => {
+    const stale = 'ELECTRON_RUN_AS_NODE=1 "/old/app" "/old/src/hook/hook-emit.js"';
+    const settings = { hooks: { Stop: [{ hooks: [{ type: 'command', command: stale }] }] } };
+    const next = ensureHooks(settings, '"C:\\Users\\u\\.config\\claude-manager\\hook-emit.cmd"');
+    const commands = next.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
+    expect(commands).toEqual(['"C:\\Users\\u\\.config\\claude-manager\\hook-emit.cmd"']);
   });
 });

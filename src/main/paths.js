@@ -2,7 +2,21 @@ import os from 'node:os';
 import path from 'node:path';
 
 export const configDir = path.join(os.homedir(), '.config', 'claude-manager');
-export const socketPath = path.join(configDir, 'manager.sock');
+
+// Windows has no unix sockets, so the IPC endpoint is a per-user named pipe
+// there. Pipe names live in the pipe namespace, not on disk, and reject some
+// characters — hence the username sanitization.
+export function managerSocketPath(
+  platform = process.platform,
+  configDirectory = configDir,
+  username = os.userInfo().username,
+) {
+  if (platform !== 'win32') return path.join(configDirectory, 'manager.sock');
+  const safe = String(username).replace(/[^A-Za-z0-9_-]/g, '-');
+  return `\\\\.\\pipe\\claude-manager-${safe}`;
+}
+
+export const socketPath = managerSocketPath();
 export const stateFile = path.join(configDir, 'state.json');
 export const sessionsFile = path.join(configDir, 'sessions.json');
 export const configFile = path.join(configDir, 'config.json');

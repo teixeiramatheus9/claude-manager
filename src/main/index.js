@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ensureHooks, removeAppHooks } from '../../scripts/install-hooks.js';
+import { buildHookCommand, ensureHooks, removeAppHooks } from '../../scripts/install-hooks.js';
 import { SessionRegistry } from './session-registry.js';
 import { startSocketServer, stopSocketServer } from './socket-server.js';
 import { readConversationTail, readTranscriptSnapshot } from './transcript.js';
@@ -59,11 +59,15 @@ import { sendUserMessage } from './cc-peer.js';
 const displayMode =
   process.platform === 'darwin'
     ? { platform: 'darwin', managed: true, canInjectInput: true }
-    : resolveDisplayMode({
-        display: process.env.DISPLAY,
-        ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
-        sessionType: process.env.XDG_SESSION_TYPE,
-      });
+    : process.platform === 'win32'
+      ? // Windows always lets apps place their own windows; input goes through
+        // SendKeys (see win32-native.js).
+        { platform: 'win32', managed: true, canInjectInput: true }
+      : resolveDisplayMode({
+          display: process.env.DISPLAY,
+          ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
+          sessionType: process.env.XDG_SESSION_TYPE,
+        });
 const canPositionWindows = displayMode.managed;
 
 // The AppImage launcher drops build.linux.executableArgs, so a packaged run can
@@ -822,7 +826,16 @@ function removeHooksInstalled() {
 function ensureHooksInstalled() {
   try {
     const hookScript = path.join(currentDir, '..', 'hook', 'hook-emit.js');
-    const command = `ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${hookScript}"`;
+    const { command, shim } = buildHookCommand({
+      platform: process.platform,
+      execPath: process.execPath,
+      hookScript,
+      shimDir: configDir,
+    });
+    if (shim) {
+      fs.mkdirSync(path.dirname(shim.path), { recursive: true });
+      fs.writeFileSync(shim.path, shim.content);
+    }
     const settings = readClaudeSettings();
     const next = ensureHooks(settings, command);
     if (JSON.stringify(next) === JSON.stringify(settings)) return;

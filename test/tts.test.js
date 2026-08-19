@@ -1,11 +1,18 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { speak, speakNeural, stopSpeaking } from '../src/main/tts.js';
+import {
+  playerCommand,
+  speak,
+  speakNeural,
+  stopSpeaking,
+  systemVoiceCommand,
+} from '../src/main/tts.js';
 import {
   DEFAULT_VOICE,
   VOICES,
   isVoiceInstalled,
   runtimeName,
+  tarBinary,
   voicePaths,
 } from '../src/main/sherpa-installer.js';
 
@@ -46,6 +53,26 @@ describe('runtime and voice resolution', () => {
     expect(faber.args.every((a) => !a.includes('kokoro'))).toBe(true);
   });
 
+  it('pins the OS-bundled bsdtar on win32 and plain tar elsewhere', () => {
+    expect(tarBinary('linux', {}, () => true)).toBe('tar');
+    expect(tarBinary('win32', { SystemRoot: 'C:\\Windows' }, () => true)).toBe(
+      'C:\\Windows\\System32\\tar.exe',
+    );
+    expect(tarBinary('win32', { SystemRoot: 'C:\\Windows' }, () => false)).toBe('tar');
+  });
+
+  it('resolves a win32-x64 runtime with an .exe binary', () => {
+    const { binary, libDir } = voicePaths('C:\\cfg\\sherpa', 'faber', 'win32', 'x64');
+    expect(binary).toMatch(/sherpa-onnx-offline-tts\.exe$/);
+    expect(binary).toContain('win-x64-shared');
+    expect(libDir).toContain('win-x64-shared');
+  });
+
+  it('still resolves the linux binary without a suffix', () => {
+    const { binary } = voicePaths('/cfg/sherpa', 'faber', 'linux', 'x64');
+    expect(binary).toMatch(/sherpa-onnx-offline-tts$/);
+  });
+
   it('falls back to the default voice for an unknown id', () => {
     const unknown = voicePaths('/cfg', 'nope', 'linux', 'x64');
     expect(unknown.voiceDir).toContain(VOICES[DEFAULT_VOICE].dirName);
@@ -67,7 +94,7 @@ describe('speak', () => {
     expect(calls[0].args.at(-1)).toBe('olá');
     expect(calls[0].args.some((a) => a.startsWith('--vits-model='))).toBe(true);
     children[0].emit('exit', 0, null);
-    expect(calls[1].command).toBe(darwin ? 'afplay' : 'aplay');
+    expect(calls[1].command).toBe(playerCommand('x.wav', process.platform)[0]);
     stopSpeaking();
   });
 
@@ -75,7 +102,7 @@ describe('speak', () => {
     const { calls, spawnFn } = recorder();
     let asked = null;
     speak('olá', { voice: 'santa', spawnFn, installed: false, ensureFn: (id) => (asked = id) });
-    expect(calls[0].command).toBe(darwin ? 'say' : 'spd-say');
+    expect(calls[0].command).toBe(systemVoiceCommand('x', 100, process.platform)[0]);
     expect(asked).toBe('santa');
     stopSpeaking();
   });
@@ -94,5 +121,41 @@ describe('speak', () => {
     speakNeural('olá', 'santa', spawnFn);
     expect(calls[0].args).toContain('--sid=44');
     stopSpeaking();
+  });
+});
+
+describe('playerCommand', () => {
+  it('darwin uses afplay', () => {
+    expect(playerCommand('/tmp/x.wav', 'darwin')).toEqual(['afplay', ['/tmp/x.wav']]);
+  });
+  it('linux uses aplay -q', () => {
+    expect(playerCommand('/tmp/x.wav', 'linux')).toEqual(['aplay', ['-q', '/tmp/x.wav']]);
+  });
+  it('win32 plays through PowerShell SoundPlayer', () => {
+    const [command, args] = playerCommand('C:\\t\\x.wav', 'win32');
+    expect(command).toBe('powershell.exe');
+    expect(args.at(-1)).toContain("Media.SoundPlayer 'C:\\t\\x.wav'");
+    expect(args.at(-1)).toContain('PlaySync()');
+  });
+});
+
+describe('systemVoiceCommand', () => {
+  it('win32 speaks through System.Speech with a pt-BR voice when available', () => {
+    const [command, args] = systemVoiceCommand('valeu, irmão!', 80, 'win32');
+    expect(command).toBe('powershell.exe');
+    const script = args.at(-1);
+    expect(script).toContain('System.Speech');
+    expect(script).toContain('$s.Volume = 80');
+    expect(script).toContain('pt-BR');
+    expect(script).toContain("Speak('valeu, irmão!')");
+  });
+  it('darwin still uses say -v Luciana', () => {
+    expect(systemVoiceCommand('oi', 100, 'darwin')).toEqual(['say', ['-v', 'Luciana', '--', 'oi']]);
+  });
+  it('linux still uses spd-say', () => {
+    expect(systemVoiceCommand('oi', 100, 'linux')).toEqual([
+      'spd-say',
+      ['-l', 'pt-BR', '-i', '100', '--', 'oi'],
+    ]);
   });
 });

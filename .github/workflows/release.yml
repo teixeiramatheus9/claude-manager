@@ -95,6 +95,9 @@ jobs:
           - name: macOS
             os: macos-latest
             args: --mac
+          - name: Windows
+            os: windows-latest
+            args: --win
     name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -129,7 +132,7 @@ jobs:
       - run: npx electron-builder ${{ matrix.args }} --publish always
 
   publish:
-    # only goes live when ALL four packages built — if one fails, the release
+    # only goes live when ALL five packages built — if one fails, the release
     # stays draft; re-run the failed job and publish follows automatically
     needs: [version, build]
     runs-on: ubuntu-latest
