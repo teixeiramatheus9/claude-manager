@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('manager', {
   panelOpened: () => ipcRenderer.send('panel:opened'),
   dismissMessage: (sessionId) => ipcRenderer.send('message:dismiss', sessionId),
   applyUpdate: () => ipcRenderer.send('update:apply'),
+  checkUpdates: () => ipcRenderer.invoke('update:check'),
   dragStart: () => ipcRenderer.send('drag:start'),
   dragEnd: () => ipcRenderer.send('drag:end'),
   focusSession: (sessionId) => ipcRenderer.invoke('warp:focus', sessionId),
@@ -16,6 +17,8 @@ contextBridge.exposeInMainWorld('manager', {
   answerQuestion: (sessionId, optionIndex) =>
     ipcRenderer.invoke('warp:answer', { sessionId, optionIndex }),
   chatWithManager: (text) => ipcRenderer.invoke('manager:chat', text),
+  getInboundPolicy: () => ipcRenderer.invoke('inbound:get'),
+  setInboundPolicy: (value) => ipcRenderer.invoke('inbound:set', value),
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (partial) => ipcRenderer.invoke('config:set', partial),
   onState: (callback) => ipcRenderer.on('state', (_event, state) => callback(state)),

@@ -651,6 +651,14 @@
       .setting-actions button:hover {
         text-decoration: underline;
       }
+      .setting-hint {
+        font-size: 11px;
+        line-height: 1.5;
+        color: var(--dim);
+      }
+      #update-check-feedback:empty {
+        display: none;
+      }
       #usage-detail {
         margin-top: 3px;
         font-size: 11px;
@@ -831,6 +839,17 @@
           <span class="sel"><select id="voice"></select></span>
         </label>
         <div id="voice-status" class="hidden"></div>
+        <div class="setting-subtitle"># resposta rápida no chat</div>
+        <label class="setting-row">
+          <span>entrega</span>
+          <span class="sel"><select id="inbound">
+            <option value="default">padrão do claude code</option>
+            <option value="accept">aceitar direto</option>
+            <option value="hold">sempre revisar</option>
+            <option value="refuse">recusar</option>
+          </select></span>
+        </label>
+        <div class="setting-hint" id="inbound-hint"></div>
         <div class="setting-subtitle"># limites</div>
         <label class="setting-row">
           <span>tokens/dia</span>
@@ -843,7 +862,9 @@
           <span class="prompt">❯</span>
           <button id="sound-test">[testar som]</button>
           <button id="voice-test">[testar voz]</button>
+          <button id="update-check">[buscar versão]</button>
         </div>
+        <div class="setting-hint" id="update-check-feedback"></div>
       </div>
       <div id="sessions"></div>
       <div id="chat" class="hidden">

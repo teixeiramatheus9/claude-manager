@@ -1,77 +1,120 @@
 import { describe, it, expect } from 'vitest';
 import {
-  parseWindowList,
+  listWindows,
   pickTargetWindow,
   titleMatchesKeys,
   focusChatTab,
   focusWarpWindow,
   sendReplyToWarp,
   answerQuestionInWarp,
+  TERMINALS,
 } from '../src/main/warp.js';
 
-const WMCTRL_OUTPUT = [
-  '0x03a00003  0 gnome-terminal-server.Gnome-terminal  host Terminal',
-  '0x04c00007  0 dev.warp.Warp.dev.warp.Warp    host projeto-alpha — claude',
-  '0x04c00042  0 dev.warp.Warp.dev.warp.Warp    host Claude Manager — npm start',
-  '',
-].join('\n');
+const DEFAULT_WINDOWS = [
+  { id: '0x03a00003', wmClass: 'gnome-terminal-server.Gnome-terminal', title: 'Terminal' },
+  { id: '0x04c00007', wmClass: 'dev.warp.Warp', title: 'projeto-alpha — claude' },
+  { id: '0x04c00042', wmClass: 'dev.warp.Warp', title: 'Claude Manager — npm start' },
+];
 
-function fakeExec({ failOn = [] } = {}) {
+// Emulates xdotool: `search` lists ids, then class and title are one query each.
+// When tabTitles is given, the title returned by getwindowname advances on every
+// next-tab keypress — which is exactly how a real terminal behaves, since the
+// window title follows the active tab.
+function fakeExec({ windows = DEFAULT_WINDOWS, failOn = [], failOnAction = [], tabTitles = null } = {}) {
   const calls = [];
+  let tabIndex = 0;
   const execFn = async (command, args) => {
     calls.push({ command, args });
     if (failOn.includes(command)) throw new Error(`${command} failed`);
-    if (command === 'wmctrl' && args[0] === '-lx') return { stdout: WMCTRL_OUTPUT };
+    if (failOnAction.includes(args[0])) throw new Error(`${command} ${args[0]} failed`);
+    if (command !== 'xdotool') return { stdout: '' };
+
+    const [action, target] = args;
+    if (action === 'search') return { stdout: windows.map((window) => window.id).join('\n') };
+    if (action === 'getwindowclassname') {
+      return { stdout: windows.find((window) => window.id === target)?.wmClass ?? '' };
+    }
+    if (action === 'getwindowname') {
+      if (tabTitles) return { stdout: tabTitles[Math.min(tabIndex, tabTitles.length - 1)] };
+      return { stdout: windows.find((window) => window.id === target)?.title ?? '' };
+    }
+    if (action === 'key' && tabTitles) tabIndex += 1;
     return { stdout: '' };
   };
   return { execFn, calls };
 }
 
-describe('parseWindowList', () => {
-  it('parses ids, classes and titles', () => {
-    const windows = parseWindowList(WMCTRL_OUTPUT);
-    expect(windows).toHaveLength(3);
-    expect(windows[1]).toEqual({
-      id: '0x04c00007',
-      wmClass: 'dev.warp.Warp.dev.warp.Warp',
-      title: 'projeto-alpha — claude',
+const keyPressesOf = (calls) =>
+  calls.filter((call) => call.command === 'xdotool' && call.args[0] === 'key');
+
+describe('listWindows', () => {
+  it('pairs each id with its class and title', async () => {
+    const { execFn } = fakeExec({
+      windows: [
+        { id: '111', wmClass: 'dev.warp.Warp', title: 'projeto-x' },
+        { id: '222', wmClass: 'ptyxis', title: 'user@host:~' },
+      ],
     });
+    expect(await listWindows({ execFn })).toEqual([
+      { id: '111', wmClass: 'dev.warp.Warp', title: 'projeto-x' },
+      { id: '222', wmClass: 'ptyxis', title: 'user@host:~' },
+    ]);
+  });
+
+  it('skips windows that vanish between the search and the query', async () => {
+    const execFn = async (_command, args) => {
+      if (args[0] === 'search') return { stdout: '111\n222' };
+      if (args[1] === '222') throw new Error('window vanished');
+      if (args[0] === 'getwindowclassname') return { stdout: 'ptyxis' };
+      return { stdout: 'titulo' };
+    };
+    expect(await listWindows({ execFn })).toEqual([
+      { id: '111', wmClass: 'ptyxis', title: 'titulo' },
+    ]);
+  });
+
+  it('returns an empty list when xdotool is missing', async () => {
+    const { execFn } = fakeExec({ failOn: ['xdotool'] });
+    expect(await listWindows({ execFn })).toEqual([]);
+  });
+});
+
+describe('TERMINALS', () => {
+  // Fedora 41+ ships Ptyxis as the default terminal; without this entry the
+  // distro default is not even selectable in the settings panel.
+  it('includes ptyxis', () => {
+    expect(TERMINALS.ptyxis).toMatchObject({ classHint: 'ptyxis', hasTabs: true });
+    expect(typeof TERMINALS.ptyxis.nextTabKey).toBe('string');
   });
 });
 
 describe('pickTargetWindow', () => {
-  const windows = parseWindowList(WMCTRL_OUTPUT);
-
   it('prefers the warp window whose title matches the project name', () => {
-    expect(pickTargetWindow(windows, 'Claude Manager').id).toBe('0x04c00042');
+    expect(pickTargetWindow(DEFAULT_WINDOWS, 'Claude Manager').id).toBe('0x04c00042');
   });
 
   it('falls back to ANY terminal whose title matches when no warp title does', () => {
-    const mixed = parseWindowList(
-      [
-        '0x1 0 dev.warp.Warp.dev.warp.Warp host outra-coisa',
-        '0x2 0 gnome-terminal-server.Gnome-terminal host fix-exames — claude',
-      ].join('\n'),
-    );
+    const mixed = [
+      { id: '0x1', wmClass: 'dev.warp.Warp', title: 'outra-coisa' },
+      { id: '0x2', wmClass: 'gnome-terminal-server.Gnome-terminal', title: 'fix-exames — claude' },
+    ];
     expect(pickTargetWindow(mixed, 'fix-exames').id).toBe('0x2');
   });
 
   it('falls back to the first warp window when nothing matches', () => {
-    expect(pickTargetWindow(windows, 'outro-projeto').id).toBe('0x04c00007');
+    expect(pickTargetWindow(DEFAULT_WINDOWS, 'outro-projeto').id).toBe('0x04c00007');
   });
 
   it('returns null when there is no warp nor matching window', () => {
-    expect(pickTargetWindow(parseWindowList('0x1 0 x.X host t'), 'x')).toBeNull();
+    expect(pickTargetWindow([{ id: '0x1', wmClass: 'x.X', title: 't' }], 'x')).toBeNull();
   });
 
   it('never picks non-terminal windows even when their title matches', () => {
-    const mixed = parseWindowList(
-      [
-        '0x1 0 google-chrome.Google-chrome host PR do projeto-alpha - Google Chrome',
-        '0x2 0 claude-manager.claude-manager host claude-manager',
-        '0x3 0 dev.warp.Warp.dev.warp.Warp host outra-aba',
-      ].join('\n'),
-    );
+    const mixed = [
+      { id: '0x1', wmClass: 'google-chrome.Google-chrome', title: 'PR do projeto-alpha - Chrome' },
+      { id: '0x2', wmClass: 'claude-manager.claude-manager', title: 'claude-manager' },
+      { id: '0x3', wmClass: 'dev.warp.Warp', title: 'outra-aba' },
+    ];
     expect(pickTargetWindow(mixed, 'projeto-alpha').id).toBe('0x3');
     expect(pickTargetWindow(mixed, 'claude-manager').id).toBe('0x3');
   });
@@ -81,50 +124,43 @@ describe('focusWarpWindow', () => {
   it('activates the picked window', async () => {
     const { execFn, calls } = fakeExec();
     expect(await focusWarpWindow('projeto-alpha', execFn)).toBe(true);
-    expect(calls[1]).toEqual({ command: 'wmctrl', args: ['-ia', '0x04c00007'] });
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { command: 'xdotool', args: ['windowactivate', '0x04c00007'] },
+      ]),
+    );
   });
 
-  it('returns false when wmctrl is unavailable', async () => {
-    const { execFn } = fakeExec({ failOn: ['wmctrl'] });
+  it('returns false when xdotool is unavailable', async () => {
+    const { execFn } = fakeExec({ failOn: ['xdotool'] });
     expect(await focusWarpWindow('x', execFn)).toBe(false);
   });
 });
 
 describe('focusChatTab', () => {
-  function tabCyclingExec(titles) {
-    const calls = [];
-    const titleQueue = [...titles];
-    const execFn = async (command, args) => {
-      calls.push({ command, args });
-      if (command === 'wmctrl' && args[0] === '-lx') {
-        return { stdout: '0x9 0 dev.warp.Warp.dev.warp.Warp host aba-aleatoria\n' };
-      }
-      if (command === 'xdotool' && args[0] === 'getwindowname') {
-        return { stdout: titleQueue.length > 1 ? titleQueue.shift() : titleQueue[0] };
-      }
-      return { stdout: '' };
-    };
-    return { execFn, calls };
-  }
-
-  it('cycles tabs with ctrl+Tab until the title matches the chat', async () => {
-    const { execFn, calls } = tabCyclingExec(['aba-aleatoria', 'outra-aba', 'fix-exames — claude']);
+  it('cycles tabs with the next-tab key until the title matches the chat', async () => {
+    const { execFn, calls } = fakeExec({
+      windows: [{ id: '0x9', wmClass: 'dev.warp.Warp', title: 'aba-aleatoria' }],
+      tabTitles: ['aba-aleatoria', 'outra-aba', 'fix-exames — claude'],
+    });
     const result = await focusChatTab('fix-exames', { execFn, delayMs: 0 });
-    expect(result).toEqual({ focused: true, tabFound: true, matchedTitle: 'fix-exames — claude' });
-    const tabPresses = calls.filter(
-      (call) => call.command === 'xdotool' && call.args[0] === 'key',
-    );
-    expect(tabPresses).toHaveLength(2);
+    expect(result).toEqual({
+      focused: true,
+      tabFound: true,
+      matchedTitle: 'fix-exames — claude',
+      cause: null,
+    });
+    expect(keyPressesOf(calls)).toHaveLength(2);
   });
 
   it('stops after wrapping around and reports the tab as not found', async () => {
-    const { execFn, calls } = tabCyclingExec(['aba-a', 'aba-b', 'aba-a']);
+    const { execFn, calls } = fakeExec({
+      windows: [{ id: '0x9', wmClass: 'dev.warp.Warp', title: 'aba-a' }],
+      tabTitles: ['aba-a', 'aba-b', 'aba-a'],
+    });
     const result = await focusChatTab('nao-existe', { execFn, delayMs: 0 });
-    expect(result).toEqual({ focused: true, tabFound: false, matchedTitle: null });
-    const tabPresses = calls.filter(
-      (call) => call.command === 'xdotool' && call.args[0] === 'key',
-    );
-    expect(tabPresses).toHaveLength(2);
+    expect(result).toEqual({ focused: true, tabFound: false, matchedTitle: null, cause: null });
+    expect(keyPressesOf(calls)).toHaveLength(2);
   });
 
   it('skips tab hunting entirely on a direct title match', async () => {
@@ -134,8 +170,86 @@ describe('focusChatTab', () => {
       focused: true,
       tabFound: true,
       matchedTitle: 'Claude Manager — npm start',
+      cause: null,
     });
-    expect(calls.some((call) => call.command === 'xdotool')).toBe(false);
+    expect(keyPressesOf(calls)).toHaveLength(0);
+  });
+
+  // Named causes replace the old silent catch, so the panel can tell the user
+  // whether xdotool is missing or the terminal is simply invisible to X.
+  it('reports no-x-windows when nothing is listable', async () => {
+    const { execFn } = fakeExec({ failOn: ['xdotool'] });
+    const result = await focusChatTab('qualquer', { execFn, delayMs: 0 });
+    expect(result).toEqual({
+      focused: false,
+      tabFound: false,
+      matchedTitle: null,
+      cause: 'no-x-windows',
+    });
+  });
+
+  it('reports terminal-not-in-x when no window is a terminal', async () => {
+    const { execFn } = fakeExec({
+      windows: [{ id: '0x1', wmClass: 'firefox', title: 'nada a ver' }],
+    });
+    const result = await focusChatTab('qualquer', { execFn, delayMs: 0 });
+    expect(result).toEqual({
+      focused: false,
+      tabFound: false,
+      matchedTitle: null,
+      cause: 'terminal-not-in-x',
+    });
+  });
+});
+
+// On Wayland the compositor gates XTEST behind the RemoteDesktop portal, so
+// pressing keys both prompts the user for remote access AND silently fails.
+// The app passes allowInputInjection:false there: window activation still works
+// (it is not XTEST), everything that types does not.
+describe('with input injection refused', () => {
+  it('focuses the window but never cycles tabs', async () => {
+    const { execFn, calls } = fakeExec({
+      windows: [{ id: '0x9', wmClass: 'dev.warp.Warp', title: 'aba-aleatoria' }],
+      tabTitles: ['aba-aleatoria', 'outra-aba', 'fix-exames — claude'],
+    });
+    const result = await focusChatTab('fix-exames', {
+      execFn,
+      delayMs: 0,
+      allowInputInjection: false,
+    });
+    expect(keyPressesOf(calls)).toHaveLength(0);
+    expect(calls).toEqual(
+      expect.arrayContaining([{ command: 'xdotool', args: ['windowactivate', '0x9'] }]),
+    );
+    expect(result.focused).toBe(true);
+    expect(result.tabFound).toBe(false);
+  });
+
+  it('copies the reply instead of typing it', async () => {
+    const { execFn, calls } = fakeExec();
+    let copied = null;
+    const mode = await sendReplyToWarp('projeto-alpha', 'pode seguir', {
+      execFn,
+      writeClipboard: (text) => {
+        copied = text;
+      },
+      delayMs: 0,
+      allowInputInjection: false,
+    });
+    expect(mode).toBe('clipboard');
+    expect(copied).toBe('pode seguir');
+    expect(calls.some((call) => call.args[0] === 'type')).toBe(false);
+  });
+
+  it('refuses to answer a question and says so', async () => {
+    const { execFn, calls } = fakeExec();
+    const result = await answerQuestionInWarp('projeto-alpha', 2, {
+      execFn,
+      delayMs: 0,
+      allowInputInjection: false,
+    });
+    expect(result).toBe('needs-terminal');
+    expect(keyPressesOf(calls)).toHaveLength(0);
   });
 });
 
@@ -153,9 +267,7 @@ describe('titleMatchesKeys', () => {
   });
 
   it('does not match on a single incidental word', () => {
-    expect(titleMatchesKeys('✳ Corrigir erro de layout', ['corrige o bug do tooltip'])).toBe(
-      false,
-    );
+    expect(titleMatchesKeys('✳ Corrigir erro de layout', ['corrige o bug do tooltip'])).toBe(false);
   });
 });
 
@@ -164,32 +276,23 @@ describe('answerQuestionInWarp', () => {
     const { execFn, calls } = fakeExec();
     const result = await answerQuestionInWarp('projeto-alpha', 2, { execFn, delayMs: 0 });
     expect(result).toBe('answered');
-    const keyPresses = calls
-      .filter((call) => call.command === 'xdotool' && call.args[0] === 'key')
-      .map((call) => call.args[2]);
-    expect(keyPresses).toEqual(['Down', 'Down', 'Return']);
+    expect(keyPressesOf(calls).map((call) => call.args[2])).toEqual(['Down', 'Down', 'Return']);
   });
 
   it('answers the first option with Return only', async () => {
     const { execFn, calls } = fakeExec();
     const result = await answerQuestionInWarp('projeto-alpha', 0, { execFn, delayMs: 0 });
     expect(result).toBe('answered');
-    const keyPresses = calls
-      .filter((call) => call.command === 'xdotool' && call.args[0] === 'key')
-      .map((call) => call.args[2]);
-    expect(keyPresses).toEqual(['Return']);
+    expect(keyPressesOf(calls).map((call) => call.args[2])).toEqual(['Return']);
   });
 
   it('refuses to press keys when the tab was not found', async () => {
     const { execFn, calls } = fakeExec();
     const result = await answerQuestionInWarp('chat-inexistente-xyz', 1, { execFn, delayMs: 0 });
     expect(result).toBe('not-found');
-    // it may cycle tabs while hunting (ctrl+Tab), but never answers
-    const answerPresses = calls.filter(
-      (call) =>
-        call.command === 'xdotool' &&
-        call.args[0] === 'key' &&
-        ['Down', 'Return'].includes(call.args[2]),
+    // It may cycle tabs while hunting, but must never answer.
+    const answerPresses = keyPressesOf(calls).filter((call) =>
+      ['Down', 'Return'].includes(call.args[2]),
     );
     expect(answerPresses).toHaveLength(0);
   });
@@ -204,13 +307,13 @@ describe('sendReplyToWarp', () => {
       delayMs: 0,
     });
     expect(mode).toBe('typed');
-    const xdotoolCalls = calls.filter((call) => call.command === 'xdotool');
-    expect(xdotoolCalls[0].args).toContain('pode seguir');
-    expect(xdotoolCalls[1].args).toEqual(['key', 'Return']);
+    const typeCall = calls.find((call) => call.args[0] === 'type');
+    expect(typeCall.args).toContain('pode seguir');
+    expect(calls.at(-1).args).toEqual(['key', 'Return']);
   });
 
   it('falls back to the clipboard when typing fails', async () => {
-    const { execFn } = fakeExec({ failOn: ['xdotool'] });
+    const { execFn } = fakeExec({ failOnAction: ['type'] });
     let copied = null;
     const mode = await sendReplyToWarp('projeto-alpha', 'resposta', {
       execFn,
@@ -223,8 +326,8 @@ describe('sendReplyToWarp', () => {
     expect(copied).toBe('resposta');
   });
 
-  it('copies to clipboard when no warp window exists at all', async () => {
-    const { execFn } = fakeExec({ failOn: ['wmctrl'] });
+  it('copies to clipboard when no terminal window exists at all', async () => {
+    const { execFn } = fakeExec({ failOn: ['xdotool'] });
     let copied = null;
     const mode = await sendReplyToWarp('x', 'resposta', {
       execFn,
@@ -238,7 +341,7 @@ describe('sendReplyToWarp', () => {
   });
 
   it('returns failed when even the clipboard blows up', async () => {
-    const { execFn } = fakeExec({ failOn: ['wmctrl'] });
+    const { execFn } = fakeExec({ failOn: ['xdotool'] });
     const mode = await sendReplyToWarp('x', 'resposta', {
       execFn,
       writeClipboard: () => {

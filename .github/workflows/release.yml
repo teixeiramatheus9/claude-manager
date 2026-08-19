@@ -66,15 +66,38 @@ jobs:
           VERSION="$MAJOR.$MINOR.$PATCH"
           git tag -a "v$VERSION" -m "release v$VERSION"
           git push origin "v$VERSION"
+          # seed the draft release now, so the parallel build jobs all attach
+          # to the same one instead of racing to create it
+          gh release create "v$VERSION" --draft --title "Claude Manager v$VERSION" --notes "em preparação…"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "released version: v$VERSION (from $LATEST)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # One job per package so each target is individually trackable and a hang
+  # in one never blocks the others.
   build:
     needs: version
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - name: AppImage
+            os: ubuntu-latest
+            args: --linux AppImage
+          - name: deb
+            os: ubuntu-latest
+            args: --linux deb
+          - name: rpm
+            os: ubuntu-latest
+            args: --linux rpm
+            needs-rpm-tools: true
+          - name: macOS
+            os: macos-latest
+            args: --mac
+    name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # the mac build is intentionally unsigned
@@ -86,17 +109,28 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y rpm
+      # the runner's azure apt mirror flakes and wedges apt — point straight
+      # at archive.ubuntu.com, cap the step and retry
+      - if: matrix.needs-rpm-tools == true
+        timeout-minutes: 6
+        run: |
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+          for attempt in 1 2 3; do
+            if sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends rpm; then
+              exit 0
+            fi
+            echo "apt attempt $attempt failed; retrying in 15s…"
+            sleep 15
+          done
+          exit 1
       - run: npm ci
       # stamp the tag's version into the build workspace (main stays untouched)
       - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
-      - if: runner.os == 'Linux'
-        run: npx electron-builder --linux --publish always
-      - if: runner.os == 'macOS'
-        run: npx electron-builder --mac --publish always
+      - run: npx electron-builder ${{ matrix.args }} --publish always
 
   publish:
+    # only goes live when ALL four packages built — if one fails, the release
+    # stays draft; re-run the failed job and publish follows automatically
     needs: [version, build]
     runs-on: ubuntu-latest
     env:
@@ -112,7 +146,14 @@ jobs:
           PREVIOUS=$(git tag -l 'v*' --sort=-v:refname | grep -vx "$VERSION" | head -n1)
           NOTES=""
           if [ -n "$PREVIOUS" ]; then
-            NOTES=$(git diff "$PREVIOUS".."$VERSION" -- CHANGELOG.md | grep '^+' | grep -v '^+++' | sed 's/^+//')
+            # only entry bullets and section headings (never the file header
+            # or instructions), and only lines that are genuinely NEW — a
+            # line both removed and added was just moved around the file
+            # (e.g. reorganizing "Não lançado" under a version heading)
+            DIFF=$(git diff "$PREVIOUS".."$VERSION" -- CHANGELOG.md)
+            printf '%s\n' "$DIFF" | grep '^+' | grep -v '^+++' | sed 's/^+//' | grep -E '^(- |### )' > /tmp/added.txt || true
+            printf '%s\n' "$DIFF" | grep '^-' | grep -v '^---' | sed 's/^-//' | grep -E '^(- |### )' > /tmp/removed.txt || true
+            NOTES=$(grep -Fxv -f /tmp/removed.txt /tmp/added.txt || true)
           fi
           if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
             NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" -f tag_name="$VERSION" --jq .body)

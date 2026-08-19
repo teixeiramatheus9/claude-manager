@@ -366,6 +366,62 @@ function refreshDropdowns() {
 }
 
 // --- manager config (terminal + daily token budget) ---
+const inboundSelect = document.getElementById('inbound');
+const inboundHint = document.getElementById('inbound-hint');
+
+const INBOUND_HINTS = {
+  default: 'entrega quando os modos de permissão casam; senão o chat pede sua confirmação.',
+  accept: '⚠ entrega sem confirmação — vale pra qualquer processo local, não só pro gerente.',
+  hold: 'toda mensagem espera você aprovar no chat.',
+  refuse: 'o chat não recebe nada do gerente.',
+};
+
+function renderInboundHint(value) {
+  const base = INBOUND_HINTS[value] ?? '';
+  // The user level is all this app writes; a repo or managed setting can still
+  // tighten it, and promising otherwise would be a lie.
+  inboundHint.textContent = `# ${base} configurações do repositório ou da organização podem restringir por cima.`;
+}
+
+window.manager.getInboundPolicy().then((value) => {
+  inboundSelect.value = value;
+  renderInboundHint(value);
+  refreshDropdowns();
+});
+
+inboundSelect.addEventListener('change', async () => {
+  const applied = await window.manager.setInboundPolicy(inboundSelect.value);
+  // Trust what main reports back, not what was clicked: a rejected or failed
+  // write must not leave the panel showing a value that is not on disk.
+  inboundSelect.value = applied;
+  renderInboundHint(applied);
+  refreshDropdowns();
+});
+
+const updateCheckButton = document.getElementById('update-check');
+const updateCheckFeedback = document.getElementById('update-check-feedback');
+
+updateCheckButton.addEventListener('click', async () => {
+  updateCheckButton.disabled = true;
+  updateCheckFeedback.textContent = '# buscando…';
+  try {
+    const status = await window.manager.checkUpdates();
+    if (status.ready) {
+      updateCheckFeedback.textContent = `# v${status.ready} baixada — clica no banner pra reiniciar`;
+    } else if (status.available) {
+      updateCheckFeedback.textContent = `# v${status.available} disponível — clica no banner acima`;
+    } else if (status.mode === 'off') {
+      updateCheckFeedback.textContent = '# modo dev — atualização desligada';
+    } else {
+      updateCheckFeedback.textContent = `# você já está na mais recente (v${status.currentVersion}) ✓`;
+    }
+  } catch {
+    updateCheckFeedback.textContent = '# não consegui checar agora';
+  } finally {
+    updateCheckButton.disabled = false;
+  }
+});
+
 const terminalSelect = document.getElementById('terminal');
 const voiceSelect = document.getElementById('voice');
 for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
@@ -664,12 +720,11 @@ function sessionElement(session) {
             const result = await window.manager.answerQuestion(session.id, optionIndex);
             chip.disabled = false;
             if (result !== 'answered') {
-              replyFeedback.set(
-                session.id,
-                result === 'not-found'
-                  ? 'Não achei a aba do chat — responde por lá'
-                  : 'Não consegui responder 😅 tenta por lá',
-              );
+              const ANSWER_FEEDBACK = {
+                'not-found': '# não achei a aba do chat — responde por lá',
+                'needs-terminal': '# abri o terminal pra você — escolhe a opção por lá',
+              };
+              replyFeedback.set(session.id, ANSWER_FEEDBACK[result] ?? '# não consegui responder');
               const feedbackElement = card.querySelector('.reply-feedback');
               if (feedbackElement) feedbackElement.textContent = replyFeedback.get(session.id);
             }

@@ -72,9 +72,15 @@ O AppImage roda em qualquer distro sem instalar nada. Pra gerar o .deb e o
 
 **Instalou pelo pacote?** Os hooks do Claude Code se **auto-registram na
 primeira execução** (com backup do settings.json) — sem precisar do repo nem
-de Node no sistema. Só instala `wmctrl` e `xdotool` pra integração com o
-terminal (Fedora: `sudo dnf install wmctrl xdotool`) e usa sessão **X11/Xorg**
-pro modo completo.
+de Node no sistema. Funciona em Wayland e X11.
+
+A resposta rápida fala **direto com a sessão do Claude Code** por um socket
+local, então funciona em qualquer terminal (Ptyxis, GNOME Terminal, Warp,
+kitty…). Se esse canal não estiver disponível, o app cai num fallback que
+controla a janela do terminal via `xdotool` — os pacotes `deb`/`rpm` já puxam
+essa dependência; no AppImage, instala na mão (Fedora:
+`sudo dnf install xdotool`; Ubuntu: `sudo apt install xdotool`). Esse fallback
+só alcança terminais rodando em X11/XWayland.
 
 ## macOS
 

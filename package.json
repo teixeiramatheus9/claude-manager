@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/main/index.js",
   "scripts": {
-    "start": "electron . --no-sandbox",
+    "start": "electron . --no-sandbox --ozone-platform=x11",
     "test": "vitest run",
     "hooks:install": "node scripts/install-hooks.js",
     "hooks:remove": "node scripts/install-hooks.js --remove",
@@ -36,10 +36,21 @@
       "icon": "assets/icon.png",
       "category": "Utility",
       "executableArgs": [
-        "--no-sandbox"
+        "--no-sandbox",
+        "--ozone-platform=x11"
       ],
       "maintainer": "teixeiramatheus9 <teixeiramatheus9@users.noreply.github.com>",
       "synopsis": "Gerente flutuante das sessões do Claude Code"
+    },
+    "deb": {
+      "depends": [
+        "xdotool"
+      ]
+    },
+    "rpm": {
+      "depends": [
+        "xdotool"
+      ]
     },
     "mac": {
       "target": [
@@ -62,6 +73,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "unbzip2-stream": "^1.4.3"
   }
 }
