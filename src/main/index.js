@@ -17,15 +17,24 @@ import { TokenBudget } from './token-budget.js';
 import { focusChatTab, sendReplyToWarp, answerQuestionInWarp } from './warp.js';
 import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir } from './paths.js';
 import { log } from './log.js';
+import { resolveDisplayMode } from './display-mode.js';
 
-// Two window-management modes, detected from the session type:
-// - X11 ("managed"): the app moves/positions its own window — hold-anywhere
-//   drag with click detection, edge-aware flipping, persisted position.
+// Two window-management modes:
+// - X11/XWayland ("managed"): the app moves/positions its own window —
+//   hold-anywhere drag with click detection, edge-aware flipping, persisted
+//   position. mutter honours _NET_WM_STATE_ABOVE and _NET_WM_STATE_STICKY for
+//   XWayland clients, which is the only way to get a real overlay on GNOME.
 // - Wayland: the compositor owns positioning, so the bubble is a
-//   -webkit-app-region drag handle and the window only grows/shrinks in
-//   place. (XWayland is NOT an option on this Iris Xe/Mesa stack: Electron
-//   never paints its windows there, no matter the GL backend.)
-const canPositionWindows = process.env.XDG_SESSION_TYPE !== 'wayland';
+//   -webkit-app-region drag handle and the window only grows/shrinks in place.
+// The app asks for XWayland via --ozone-platform=x11 (see package.json). The
+// switch has to come from the command line: appendSwitch() from this file runs
+// too late, because Chromium picks the platform before main.js executes.
+const displayMode = resolveDisplayMode({
+  display: process.env.DISPLAY,
+  ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
+  sessionType: process.env.XDG_SESSION_TYPE,
+});
+const canPositionWindows = displayMode.managed;
 
 // Associates the running window with the installed .desktop entry so desktop
 // environments show the right icon/name for packaged builds.
@@ -483,6 +492,7 @@ function scheduleSessionsSave() {
 }
 
 app.whenReady().then(() => {
+  log(`display mode: platform=${displayMode.platform} managed=${displayMode.managed}`);
   ensureHooksInstalled();
   hydrateRegistry();
   createMainWindow();
