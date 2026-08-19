@@ -367,9 +367,24 @@ async function generateVoiceForStop(session) {
   showTooltip();
 }
 
+// The Notification hook often fires BEFORE Claude Code flushes the ask entry
+// to the transcript — reading immediately misses the question and the card
+// shows no options. Retry a few times before giving up.
+const QUESTION_RETRY_DELAYS_MS = [0, 600, 1500];
+
+async function readSnapshotWithQuestionRetry(transcriptPath) {
+  let snapshot = { lastAssistantMessage: null, pendingQuestion: null };
+  for (const delayMs of QUESTION_RETRY_DELAYS_MS) {
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    snapshot = await readTranscriptSnapshot(transcriptPath);
+    if (snapshot.pendingQuestion) return snapshot;
+  }
+  return snapshot;
+}
+
 async function enrichNotification(session) {
   const snapshot = session.transcriptPath
-    ? await readTranscriptSnapshot(session.transcriptPath)
+    ? await readSnapshotWithQuestionRetry(session.transcriptPath)
     : { pendingQuestion: null };
   registry.setQuestion(session.id, snapshot.pendingQuestion);
   const firstQuestion = snapshot.pendingQuestion?.questions?.[0];
@@ -381,6 +396,7 @@ async function enrichNotification(session) {
     projectName: session.projectName,
     text,
     kind: firstQuestion ? 'question' : 'waiting',
+    optionsCount: firstQuestion?.options?.length ?? 0,
   });
   showTooltip();
 }

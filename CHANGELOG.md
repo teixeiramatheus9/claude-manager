@@ -11,12 +11,14 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 ## Não lançado
 
 ### Feats
+- Notificação por voz da pergunta agora diz quantas opções tem pra escolher ("tem uma pergunta no X com 3 opções")
 - Sete temas de cor (azul-aço, âmbar crt, magenta synth, ciano gelo, monocromo, magma reator, matrix code), com o logo acompanhando a cor de cada um
 - Tamanho do painel ajustável de 80% a 160% — a fonte e os controles crescem junto, não só a janela
 - Volume próprio para a voz do gerente, multiplicado pelo volume geral
 - O gerente avisa por voz quando termina de se atualizar
 
 ### Fixes
+- Opções da pergunta aparecem no card mesmo quando o aviso chega antes do transcript ser gravado — o app agora relê o arquivo algumas vezes antes de desistir
 - O botão de instalar a atualização não fazia nada no deb/rpm quando o app tinha se re-lançado sozinho para o XWayland: o relançamento marca o processo com `no_new_privs`, e o `pkexec` perde o setuid. A instalação agora sai por uma unit do systemd do usuário, fora dessa herança
 - Falha ao instalar a atualização agora aparece no banner, em vez de só no log
 - Ajustes de som (volume, timbre, mudo, TTS) voltam a valer na hora: eles moravam em cada janela, e quem toca o som é a bolinha enquanto quem configura é o painel

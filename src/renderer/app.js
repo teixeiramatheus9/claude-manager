@@ -574,7 +574,10 @@ window.manager.onChime(({ kind }) => {
 // message lives in the tooltip/panel.
 const TTS_PHRASES = {
   done: (projectName) => `Tarefa concluída no ${projectName}.`,
-  question: (projectName) => `Pergunta pendente no ${projectName}.`,
+  question: (projectName, optionsCount) =>
+    optionsCount > 0
+      ? `Tem uma pergunta no ${projectName} com ${optionsCount} ${optionsCount === 1 ? 'opção' : 'opções'} pra escolher.`
+      : `Tem uma pergunta no ${projectName}.`,
   waiting: (projectName) => `O chat ${projectName} espera você.`,
 };
 
@@ -593,12 +596,12 @@ document.getElementById('toast-close').addEventListener('click', (event) => {
   hideTooltip();
 });
 
-window.manager.onTooltip(({ projectName, text, kind }) => {
+window.manager.onTooltip(({ projectName, text, kind, optionsCount }) => {
   if (view === 'bubble') {
     chime(kind);
     if (ttsEnabled && !muted) {
       const phrase = TTS_PHRASES[kind] ?? TTS_PHRASES.waiting;
-      speakSample(phrase(projectName));
+      speakSample(phrase(projectName, optionsCount));
     }
   }
   const alert = kind === 'question' || kind === 'waiting';
