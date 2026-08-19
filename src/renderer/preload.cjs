@@ -2,7 +2,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('manager', {
-  setMode: (mode) => ipcRenderer.send('ui:mode', mode),
+  togglePanel: () => ipcRenderer.send('overlay:toggle-panel'),
+  openPanel: () => ipcRenderer.send('overlay:open-panel'),
+  closeOverlay: () => ipcRenderer.send('overlay:close'),
+  quit: () => ipcRenderer.send('app:quit'),
   panelOpened: () => ipcRenderer.send('panel:opened'),
   dismissMessage: (sessionId) => ipcRenderer.send('message:dismiss', sessionId),
   applyUpdate: () => ipcRenderer.send('update:apply'),
@@ -21,6 +24,6 @@ contextBridge.exposeInMainWorld('manager', {
   speak: (text) => ipcRenderer.send('tts:speak', text),
   onBlur: (callback) => ipcRenderer.on('ui:blur', () => callback()),
   onEnv: (callback) => ipcRenderer.on('ui:env', (_event, env) => callback(env)),
-  onFlip: (callback) => ipcRenderer.on('ui:flip', (_event, flipped) => callback(flipped)),
+  onOverlayMode: (callback) => ipcRenderer.on('overlay:mode', (_event, mode) => callback(mode)),
   onClick: (callback) => ipcRenderer.on('ui:click', () => callback()),
 });

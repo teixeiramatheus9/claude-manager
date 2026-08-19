@@ -11,6 +11,16 @@ const sherpaDir = path.join(configDir, 'sherpa');
 const legacyPiperDir = path.join(configDir, 'piper');
 const downloading = new Set();
 let processes = [];
+let onDownloadStatus = () => {};
+
+// The renderer shows a line while a model is on its way.
+export function watchDownloads(listener) {
+  onDownloadStatus = listener;
+}
+
+export function downloadingVoice() {
+  return [...downloading][0] ?? null;
+}
 
 export function stopSpeaking() {
   for (const child of processes) {
@@ -63,15 +73,19 @@ export function speakNeural(text, voiceId, spawnFn = spawn) {
 function ensureVoiceInBackground(voiceId) {
   if (downloading.has(voiceId) || isVoiceInstalled(sherpaDir, voiceId)) return;
   downloading.add(voiceId);
+  onDownloadStatus(voiceId);
   log(`voice: downloading ${voiceId}…`);
   installVoice(sherpaDir, voiceId)
     .then(() => {
       log(`voice: ${voiceId} installed`);
+      downloading.delete(voiceId);
+      onDownloadStatus(null);
       fs.rmSync(legacyPiperDir, { recursive: true, force: true });
       speakNeural('Voz instalada. Agora eu falo assim!', voiceId);
     })
     .catch((error) => {
       downloading.delete(voiceId); // allow a retry on the next speak
+      onDownloadStatus(null);
       log(`voice install failed: ${error}`);
     });
 }
