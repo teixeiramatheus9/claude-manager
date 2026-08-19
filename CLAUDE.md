@@ -60,6 +60,13 @@ Pontos críticos:
   ali não é prova de morte: builds sem o registro não listam nada. Só se reapa
   sessão já vista viva, ou quando o registro lista alguma outra (prova de que
   funciona nessa máquina), e nunca as fixtures `sim-*` do simulate-event.sh.
+- **Electron preso no 42**: o Electron 43/44 registra o StatusNotifierItem
+  pelo well-known name e só responde `Properties.Get` endereçado por esse nome;
+  o GDBusProxy do gnome-shell endereça pelo unique name, então a extensão
+  appindicator nunca lê as propriedades e o ícone da bandeja fica no
+  placeholder "•••" (`image-loading-symbolic`) pra sempre — em qualquer GNOME
+  (Ubuntu/Fedora). Não faça bump pra 43+ sem provar no GNOME que o `gdbus call
+  --dest <unique name> … Properties.Get … Id` do item responde.
 - **Sandbox do Electron no Ubuntu 24+**: `npm start` usa `--no-sandbox`
   (só HTML local). Alternativa com sandbox: ver README.
 

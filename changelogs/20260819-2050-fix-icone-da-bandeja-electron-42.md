@@ -1,0 +1,2 @@
+- Ícone da bandeja finalmente aparece no GNOME (Ubuntu e Fedora): o Electron 43 quebrou a leitura das propriedades do ícone pela extensão AppIndicator, que desistia e deixava os três pontinhos no lugar — o app voltou pro Electron 42, onde a bandeja funciona de primeira
+- Removido o "empurrão" de re-registro na bandeja das versões anteriores: ele não corrigia o problema real e ainda podia derrubar o ícone já mostrado
