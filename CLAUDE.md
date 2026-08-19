@@ -56,3 +56,15 @@ npm run dist              # AppImage + deb + rpm em dist/
 
 Runtime: `~/.config/claude-manager/` (`manager.sock`, `state.json`,
 `sessions.json`, `config.json`, `usage.json`, `log`).
+
+## Releases (automatizadas)
+
+- Versão mora nas **tags** (`vMAJOR.MINOR.PATCH`), não no package.json.
+- Merge/push na `main` a partir de branch `release/*` = major, `feat/*` =
+  minor, `fix/*` = patch (fallback: prefixo do commit). Outros prefixos não
+  lançam. O CI tagueia, builda Linux+macOS e publica a release sozinho.
+- **Toda PR de feat/fix/release DEVE atualizar o `CHANGELOG.md`** na seção
+  "Não lançado" (check `changelog` obrigatório) — o texto adicionado desde a
+  última tag vira o corpo da release publicada.
+- Auto-update: AppImage se atualiza via electron-updater (`latest-linux.yml`);
+  deb/rpm/dmg mostram banner apontando pra release.

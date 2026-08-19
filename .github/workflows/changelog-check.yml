@@ -1,0 +1,30 @@
+name: changelog
+
+# feat/*, fix/* and release/* PRs MUST update CHANGELOG.md — the added text
+# becomes the published release note.
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          case "$HEAD_REF" in
+            feat/*|fix/*|release/*) ;;
+            *) echo "branch '$HEAD_REF' não exige release note ✓"; exit 0 ;;
+          esac
+          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -qx 'CHANGELOG.md'; then
+            echo "CHANGELOG.md atualizado ✓"
+          else
+            echo "::error::PRs de feat/fix/release DEVEM atualizar o CHANGELOG.md (seção 'Não lançado') — essa descrição vira a release note."
+            exit 1
+          fi
