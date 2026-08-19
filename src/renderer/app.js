@@ -552,11 +552,13 @@ function sessionElement(session) {
             const result = await window.manager.answerQuestion(session.id, optionIndex);
             chip.disabled = false;
             if (result !== 'answered') {
+              const ANSWER_FEEDBACK = {
+                'not-found': 'Não achei a aba do chat — responde por lá',
+                'needs-terminal': 'Abri o terminal pra você — escolhe a opção por lá',
+              };
               replyFeedback.set(
                 session.id,
-                result === 'not-found'
-                  ? 'Não achei a aba do chat — responde por lá'
-                  : 'Não consegui responder 😅 tenta por lá',
+                ANSWER_FEEDBACK[result] ?? 'Não consegui responder 😅 tenta por lá',
               );
               const feedbackElement = card.querySelector('.reply-feedback');
               if (feedbackElement) feedbackElement.textContent = replyFeedback.get(session.id);

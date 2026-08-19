@@ -4,11 +4,21 @@
 // the switch alone would promise positioning to a process that never got an X
 // display. Both have to agree.
 export function resolveDisplayMode({ display, ozonePlatform, sessionType }) {
-  if (!display) return { platform: 'wayland', managed: false };
-  if (ozonePlatform === 'x11') return { platform: 'x11', managed: true };
-  if (ozonePlatform === 'wayland') return { platform: 'wayland', managed: false };
+  // XTEST — what xdotool uses to type and press keys in OTHER apps — is a
+  // property of the session, not of this window: xdotool is a separate process
+  // talking to the X server. On a real X11 session it is unrestricted. Under
+  // XWayland the compositor gates it behind the RemoteDesktop portal (GNOME 49
+  // shows a remote-access consent dialog and the keystrokes still never land),
+  // so the app must not try. Positioning and injection are therefore separate
+  // capabilities: under XWayland the app can place its own window but cannot
+  // type into anyone else's.
+  const canInjectInput = Boolean(display) && sessionType !== 'wayland';
+
+  if (!display) return { platform: 'wayland', managed: false, canInjectInput };
+  if (ozonePlatform === 'x11') return { platform: 'x11', managed: true, canInjectInput };
+  if (ozonePlatform === 'wayland') return { platform: 'wayland', managed: false, canInjectInput };
   // No explicit switch: Electron follows the session, so trust the session type.
   return sessionType === 'wayland'
-    ? { platform: 'wayland', managed: false }
-    : { platform: 'x11', managed: true };
+    ? { platform: 'wayland', managed: false, canInjectInput }
+    : { platform: 'x11', managed: true, canInjectInput };
 }

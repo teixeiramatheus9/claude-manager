@@ -365,6 +365,7 @@ function sessionSearchKeys(session) {
 async function huntSessionTab(session) {
   const result = await focusChatTab(sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
+    allowInputInjection: displayMode.canInjectInput,
   });
   if (session?.id) {
     if (result.tabFound && result.matchedTitle) {
@@ -403,6 +404,7 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
 
   const result = await answerQuestionInWarp(sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
+    allowInputInjection: displayMode.canInjectInput,
   });
   if (result === 'answered') registry.markAnswered(sessionId);
   return result;
@@ -423,6 +425,7 @@ async function replyToSession(session, text) {
   return sendReplyToWarp(sessionSearchKeys(session), text, {
     writeClipboard: (value) => clipboard.writeText(value),
     terminal: managerConfig.terminal,
+    allowInputInjection: displayMode.canInjectInput,
   });
 }
 
@@ -525,7 +528,11 @@ function scheduleSessionsSave() {
 }
 
 app.whenReady().then(() => {
-  log(`display mode: platform=${displayMode.platform} managed=${displayMode.managed}`);
+  log(
+    `display mode: platform=${displayMode.platform} managed=${displayMode.managed} `.concat(
+      `canInjectInput=${displayMode.canInjectInput}`,
+    ),
+  );
   ensureHooksInstalled();
   hydrateRegistry();
   createMainWindow();

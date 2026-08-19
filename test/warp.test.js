@@ -202,6 +202,57 @@ describe('focusChatTab', () => {
   });
 });
 
+// On Wayland the compositor gates XTEST behind the RemoteDesktop portal, so
+// pressing keys both prompts the user for remote access AND silently fails.
+// The app passes allowInputInjection:false there: window activation still works
+// (it is not XTEST), everything that types does not.
+describe('with input injection refused', () => {
+  it('focuses the window but never cycles tabs', async () => {
+    const { execFn, calls } = fakeExec({
+      windows: [{ id: '0x9', wmClass: 'dev.warp.Warp', title: 'aba-aleatoria' }],
+      tabTitles: ['aba-aleatoria', 'outra-aba', 'fix-exames — claude'],
+    });
+    const result = await focusChatTab('fix-exames', {
+      execFn,
+      delayMs: 0,
+      allowInputInjection: false,
+    });
+    expect(keyPressesOf(calls)).toHaveLength(0);
+    expect(calls).toEqual(
+      expect.arrayContaining([{ command: 'xdotool', args: ['windowactivate', '0x9'] }]),
+    );
+    expect(result.focused).toBe(true);
+    expect(result.tabFound).toBe(false);
+  });
+
+  it('copies the reply instead of typing it', async () => {
+    const { execFn, calls } = fakeExec();
+    let copied = null;
+    const mode = await sendReplyToWarp('projeto-alpha', 'pode seguir', {
+      execFn,
+      writeClipboard: (text) => {
+        copied = text;
+      },
+      delayMs: 0,
+      allowInputInjection: false,
+    });
+    expect(mode).toBe('clipboard');
+    expect(copied).toBe('pode seguir');
+    expect(calls.some((call) => call.args[0] === 'type')).toBe(false);
+  });
+
+  it('refuses to answer a question and says so', async () => {
+    const { execFn, calls } = fakeExec();
+    const result = await answerQuestionInWarp('projeto-alpha', 2, {
+      execFn,
+      delayMs: 0,
+      allowInputInjection: false,
+    });
+    expect(result).toBe('needs-terminal');
+    expect(keyPressesOf(calls)).toHaveLength(0);
+  });
+});
+
 describe('titleMatchesKeys', () => {
   it('matches ignoring accents', () => {
     expect(titleMatchesKeys('✳ Correção de exames', ['correcao de exames'])).toBe(true);

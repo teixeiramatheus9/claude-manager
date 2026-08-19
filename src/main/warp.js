@@ -131,7 +131,13 @@ export function titleMatchesKeys(title, keys) {
 // until it matches the chat, wraps around, or hits the safety cap.
 export async function focusChatTab(
   searchKeys,
-  { execFn = execFileAsync, delayMs = 200, maxTabs = 12, terminal = 'auto' } = {},
+  {
+    execFn = execFileAsync,
+    delayMs = 200,
+    maxTabs = 12,
+    terminal = 'auto',
+    allowInputInjection = true,
+  } = {},
 ) {
   try {
     const spec = terminalSpec(terminal);
@@ -164,7 +170,10 @@ export async function focusChatTab(
       return String(result.stdout ?? '').trim();
     };
 
-    if (spec.hasTabs && spec.nextTabKey) {
+    // Cycling tabs means pressing keys, which is XTEST. On Wayland that both
+    // prompts the user for remote access and silently fails, so it is skipped
+    // and the caller settles for focusing the right window.
+    if (allowInputInjection && spec.hasTabs && spec.nextTabKey) {
       for (const candidate of windows.filter(isPreferred)) {
         await execFn('xdotool', ['windowactivate', candidate.id]);
         await sleep(delayMs);
@@ -201,9 +210,21 @@ export async function focusChatTab(
 export async function answerQuestionInWarp(
   searchKeys,
   optionIndex,
-  { execFn = execFileAsync, delayMs = REPLY_TYPE_DELAY_MS, terminal = 'auto' } = {},
+  {
+    execFn = execFileAsync,
+    delayMs = REPLY_TYPE_DELAY_MS,
+    terminal = 'auto',
+    allowInputInjection = true,
+  } = {},
 ) {
-  const { focused, tabFound } = await focusChatTab(searchKeys, { execFn, delayMs, terminal });
+  const { focused, tabFound } = await focusChatTab(searchKeys, {
+    execFn,
+    delayMs,
+    terminal,
+    allowInputInjection,
+  });
+  // The terminal is focused either way, so the user can answer by hand.
+  if (!allowInputInjection) return 'needs-terminal';
   if (!focused || !tabFound) return 'not-found';
   try {
     await sleep(delayMs);
@@ -229,7 +250,13 @@ export async function focusWarpWindow(projectName, execFn = execFileAsync) {
 export async function sendReplyToWarp(
   searchKeys,
   text,
-  { execFn = execFileAsync, writeClipboard, delayMs = REPLY_TYPE_DELAY_MS, terminal = 'auto' } = {},
+  {
+    execFn = execFileAsync,
+    writeClipboard,
+    delayMs = REPLY_TYPE_DELAY_MS,
+    terminal = 'auto',
+    allowInputInjection = true,
+  } = {},
 ) {
   const clipboardFallback = () => {
     try {
@@ -240,8 +267,16 @@ export async function sendReplyToWarp(
     }
   };
 
-  const { focused } = await focusChatTab(searchKeys, { execFn, delayMs, terminal });
+  const { focused } = await focusChatTab(searchKeys, {
+    execFn,
+    delayMs,
+    terminal,
+    allowInputInjection,
+  });
   if (!focused) return clipboardFallback();
+  // Typing is XTEST: refused on Wayland, so the reply goes to the clipboard
+  // with the terminal already focused and waiting for a paste.
+  if (!allowInputInjection) return clipboardFallback();
 
   try {
     // Give the window manager a beat to actually move focus before typing.
