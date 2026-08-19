@@ -728,29 +728,43 @@ function finishCard(card, session) {
   return card;
 }
 
-// The empty list offers a rescan: chats opened before the manager was up (or
-// closed on the ✕) never fire a hook, so they only come back by adoption.
+// Chats opened before the manager was up — or closed on the ✕ — never fire a
+// hook, so adoption is the only way back. The rescan is offered on a populated
+// list too: a list missing one of five chats looks just as complete as a full
+// one, so there is no state where the user can tell they need it.
+const RESCAN_LABEL = '[procurar chats abertos]';
+
+function rescanElement() {
+  const row = document.createElement('div');
+  row.className = 'rescan-row';
+  const button = document.createElement('button');
+  button.className = 'rescan';
+  button.textContent = RESCAN_LABEL;
+  const feedback = document.createElement('span');
+  feedback.className = 'rescan-feedback';
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    button.textContent = '[procurando…]';
+    feedback.textContent = '';
+    try {
+      // adopting anything fires a state event, which redraws the whole list
+      const adopted = await window.manager.rescanSessions();
+      if (!adopted) feedback.textContent = 'nenhum chat aberto além dos que eu já conheço';
+    } finally {
+      button.disabled = false;
+      button.textContent = RESCAN_LABEL;
+    }
+  });
+  row.append(button, feedback);
+  return row;
+}
+
 function emptyStateElement() {
   const empty = document.createElement('div');
   empty.id = 'empty';
   const text = document.createElement('span');
   text.textContent = '# nenhuma sessão por enquanto — manda o claude trabalhar que eu te aviso';
-  const rescan = document.createElement('button');
-  rescan.id = 'rescan';
-  rescan.textContent = '[procurar chats abertos]';
-  rescan.addEventListener('click', async () => {
-    rescan.disabled = true;
-    rescan.textContent = '[procurando…]';
-    try {
-      const adopted = await window.manager.rescanSessions();
-      // when something is adopted the state event redraws the whole list
-      if (!adopted) text.textContent = '# não achei nenhum chat aberto por aqui';
-    } finally {
-      rescan.disabled = false;
-      rescan.textContent = '[procurar chats abertos]';
-    }
-  });
-  empty.append(text, rescan);
+  empty.append(text, rescanElement());
   return empty;
 }
 
@@ -968,4 +982,5 @@ window.manager.onState((state) => {
   for (const session of state.sessions) {
     sessionsContainer.append(sessionElement(session));
   }
+  sessionsContainer.append(rescanElement());
 });
