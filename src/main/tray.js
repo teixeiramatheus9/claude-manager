@@ -25,10 +25,12 @@ export function trayMenuTemplate({ bubbleVisible }) {
   ];
 }
 
-// Linux only, on purpose. On macOS closing the app is meant to end it — and
-// to take this app's Claude Code hooks with it — so there is nothing to park
-// in the menu bar.
+// Linux and Windows. On macOS closing the app is meant to end it — and to
+// take this app's Claude Code hooks with it — so there is nothing to park in
+// the menu bar.
 export async function detectTrayHost({ platform, execFn }) {
+  // The Windows shell always has a notification area; no host to probe.
+  if (platform === 'win32') return true;
   if (platform !== 'linux') return false;
   try {
     const { stdout } = await execFn('gdbus', [

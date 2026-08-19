@@ -7,3 +7,5 @@
   pelo título; chips e resposta rápida digitam direto no chat.
 - Autostart no Windows: `npm run autostart:install` registra o app pra subir
   junto com o login.
+- Bandeja do sistema no Windows: fechar pelo painel estaciona o app na área
+  de notificação, com menu pra reabrir, esconder a bolha ou encerrar de vez.
