@@ -24,9 +24,13 @@ function fallbackNotify(event) {
       ? `A tarefa do '${projectName}' terminou.`
       : (event?.message ?? `O '${projectName}' está esperando você.`);
   try {
-    spawn('notify-send', ['Claude Manager', body], { detached: true, stdio: 'ignore' }).unref();
+    const [command, args] =
+      process.platform === 'darwin'
+        ? ['osascript', ['-e', `display notification ${JSON.stringify(body)} with title "Claude Manager"`]]
+        : ['notify-send', ['Claude Manager', body]];
+    spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch {
-    // no notify-send, nothing else to do
+    // no notifier available, nothing else to do
   }
 }
 
