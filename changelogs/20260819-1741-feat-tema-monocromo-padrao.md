@@ -1,0 +1,1 @@
+- O monocromo passa a ser o tema padrão de instalação nova, e o ícone do app segue as cores dele (quem já escolheu um tema continua com o seu)
