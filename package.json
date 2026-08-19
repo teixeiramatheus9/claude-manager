@@ -48,11 +48,20 @@
       "icon": "assets/icon.png",
       "category": "public.app-category.utilities",
       "identity": null
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "teixeiramatheus9",
+      "repo": "claude-manager",
+      "releaseType": "draft"
     }
   },
   "devDependencies": {
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

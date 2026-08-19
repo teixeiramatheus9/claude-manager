@@ -13,6 +13,7 @@ import { fallbackMessage } from './manager-voice.js';
 import { loadConfig, saveConfig } from './config-store.js';
 import { TokenBudget } from './token-budget.js';
 import { terminal, tts } from './platform.js';
+import { setupUpdater } from './updater.js';
 import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir } from './paths.js';
 import { log } from './log.js';
 
@@ -59,15 +60,35 @@ function sendToRenderer(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
 }
 
+let updateStatus = { mode: 'off', available: null, ready: null };
+let updaterHandle = { apply: () => {} };
+let announcedUpdateVersion = null;
+
 function sendState() {
   sendToRenderer('state', {
     sessions: registry.list(),
     unread: registry.unreadCount(),
+    update: updateStatus,
     tokens: {
       usedToday: tokenBudget.usedToday(),
       budget: managerConfig.tokenBudgetDaily,
       economy: isEconomyMode(),
     },
+  });
+}
+
+function onUpdateStatus(status) {
+  updateStatus = status;
+  sendState();
+  const version = status.ready ?? status.available;
+  if (!version || announcedUpdateVersion === version) return;
+  announcedUpdateVersion = version;
+  sendToRenderer('tooltip', {
+    projectName: 'Claude Manager',
+    text: status.ready
+      ? `Atualização v${version} pronta! Clica no banner do painel pra reiniciar.`
+      : `Versão v${version} disponível!`,
+    kind: 'done',
   });
 }
 
@@ -217,6 +238,8 @@ ipcMain.on('ui:mode', (_event, mode) => {
 ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('message:dismiss', (_event, sessionId) => registry.dismissMessage(sessionId));
+
+ipcMain.on('update:apply', () => updaterHandle.apply());
 
 ipcMain.on('tts:speak', (_event, rawText) => {
   const text = String(rawText ?? '').slice(0, 300);
@@ -443,6 +466,7 @@ app.whenReady().then(() => {
   registry.on('change', sendState);
   registry.on('change', scheduleSessionsSave);
   setInterval(() => registry.prune(), PRUNE_INTERVAL_MS);
+  updaterHandle = setupUpdater({ onStatus: onUpdateStatus, log });
 });
 
 app.on('window-all-closed', () => app.quit());

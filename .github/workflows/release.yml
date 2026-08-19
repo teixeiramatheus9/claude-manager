@@ -1,0 +1,109 @@
+name: release
+
+# Merge/push to main from a release/*, feat/* or fix/* branch (or with a
+# conventional-commit subject) bumps MAJOR.MINOR.PATCH accordingly, tags,
+# builds Linux + macOS packages and publishes the GitHub release.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore: release') }}
+    runs-on: ubuntu-latest
+    outputs:
+      bump: ${{ steps.decide.outputs.bump }}
+    steps:
+      - id: decide
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          FIRST_LINE="$(printf '%s' "$MESSAGE" | head -n1)"
+          BUMP=""
+          # merge commits carry the source branch name
+          if   echo "$FIRST_LINE" | grep -qE 'from [^ ]+/release/'; then BUMP=major
+          elif echo "$FIRST_LINE" | grep -qE 'from [^ ]+/feat/';    then BUMP=minor
+          elif echo "$FIRST_LINE" | grep -qE 'from [^ ]+/fix/';     then BUMP=patch
+          # direct pushes fall back to the conventional-commit prefix
+          elif echo "$FIRST_LINE" | grep -qE '^release(\(|!|:)';    then BUMP=major
+          elif echo "$FIRST_LINE" | grep -qE '^feat(\(|!|:)';       then BUMP=minor
+          elif echo "$FIRST_LINE" | grep -qE '^fix(\(|!|:)';        then BUMP=patch
+          fi
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "decided bump: ${BUMP:-none (no release)}"
+
+  # Versions live in git TAGS (the source of truth), so the CI never has to
+  # push to the protected main branch — it only pushes the new tag.
+  version:
+    needs: plan
+    if: ${{ needs.plan.outputs.bump != '' }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          LATEST=$(git tag -l 'v*' --sort=-v:refname | head -n1)
+          LATEST=${LATEST:-v0.0.0}
+          IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#v}"
+          case "${{ needs.plan.outputs.bump }}" in
+            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0;;
+            minor) MINOR=$((MINOR+1)); PATCH=0;;
+            patch) PATCH=$((PATCH+1));;
+          esac
+          VERSION="$MAJOR.$MINOR.$PATCH"
+          git tag -a "v$VERSION" -m "release v$VERSION"
+          git push origin "v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "released version: v$VERSION (from $LATEST)"
+
+  build:
+    needs: version
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # the mac build is intentionally unsigned
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - run: npm ci
+      # stamp the tag's version into the build workspace (main stays untouched)
+      - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
+      - if: runner.os == 'Linux'
+        run: npx electron-builder --linux --publish always
+      - if: runner.os == 'macOS'
+        run: npx electron-builder --mac --publish always
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          VERSION="v${{ needs.version.outputs.version }}"
+          NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" -f tag_name="$VERSION" --jq .body)
+          gh release edit "$VERSION" --notes "$NOTES" --draft=false --latest

@@ -586,7 +586,26 @@ function sessionElement(session) {
 
 let lastUnreadCount = 0;
 
+const updateBanner = document.getElementById('update-banner');
+updateBanner.addEventListener('click', () => window.manager.applyUpdate());
+
+function renderUpdateBanner(update) {
+  if (!update || (!update.available && !update.ready)) {
+    updateBanner.classList.add('hidden');
+    return;
+  }
+  updateBanner.classList.remove('hidden');
+  if (update.ready) {
+    updateBanner.textContent = `🚀 v${update.ready} pronta — reiniciar agora`;
+  } else if (update.mode === 'auto') {
+    updateBanner.textContent = `⬇️ baixando v${update.available}…`;
+  } else {
+    updateBanner.textContent = `🚀 v${update.available} disponível — baixar`;
+  }
+}
+
 window.manager.onState((state) => {
+  renderUpdateBanner(state.update);
   renderUsage(state.tokens);
   badge.textContent = state.unread > 99 ? '99+' : String(state.unread);
   badge.style.display = state.unread > 0 ? 'flex' : 'none';
