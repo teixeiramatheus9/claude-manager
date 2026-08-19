@@ -295,8 +295,12 @@
         text-align: left;
         cursor: pointer;
       }
-      #update-banner:hover {
+      #update-banner:hover:not(:disabled) {
         text-decoration: underline;
+      }
+      #update-banner:disabled {
+        color: var(--text-3);
+        cursor: default;
       }
 
       /* --- session rows --- */

@@ -11,6 +11,7 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 ## Não lançado
 
 ### Fixes
+- Atualização mostra que está instalando (e avisa da senha) em vez de continuar oferecendo o download; no Linux o app sai da frente pro diálogo de autenticação do sistema, que antes ficava atrás do overlay e impedia digitar a senha
 - Instalação das vozes neurais não depende mais do bzip2 do sistema — a descompressão agora é feita pelo próprio app (corrige voz robótica em máquinas sem bzip2)
 
 ### Feats
