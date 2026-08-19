@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { ensureHooks, removeAppHooks } from '../../scripts/install-hooks.js';
 import { SessionRegistry } from './session-registry.js';
 import { startSocketServer, stopSocketServer } from './socket-server.js';
-import { readTranscriptSnapshot } from './transcript.js';
+import { readConversationTail, readTranscriptSnapshot } from './transcript.js';
 import { generateManagerMessage, humanizeNotification } from './manager-voice.js';
 import { digestMessage } from './message-digest.js';
 import { askManager, findMentionedSession } from './manager-chat.js';
@@ -655,6 +655,14 @@ ipcMain.handle('warp:focus', (_event, sessionId) => {
   return huntSessionTab(session);
 });
 
+// The mirror view: the conversation this chat had, straight from its
+// transcript — same file the Stop handler already reads, so no new source.
+ipcMain.handle('transcript:tail', async (_event, sessionId) => {
+  const session = registry.sessions.get(sessionId);
+  if (!session?.transcriptPath) return [];
+  return readConversationTail(session.transcriptPath);
+});
+
 ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const session = registry.sessions.get(sessionId);
   const index = Number(optionIndex);
@@ -665,8 +673,11 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const optionText = session.question?.questions?.[0]?.options?.[index];
   const channel = readSessionChannel(session.id);
   if (channel && typeof optionText === 'string' && optionText.trim()) {
+    // 'now': the chat is parked on this question, so the answer must not sit
+    // behind anything else in its queue.
     const outcome = await sendUserMessage(channel.socketPath, optionText, {
       token: channel.token,
+      priority: 'now',
     });
     if (outcome === 'sent') {
       registry.markAnswered(sessionId);
@@ -692,7 +703,12 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
 async function replyToSession(session, text) {
   const channel = session?.id ? readSessionChannel(session.id) : null;
   if (channel) {
-    const outcome = await sendUserMessage(channel.socketPath, text, { token: channel.token });
+    // A panel reply is the user reacting to this chat right now — jump the
+    // queue instead of waiting for whatever turn is in flight to finish.
+    const outcome = await sendUserMessage(channel.socketPath, text, {
+      token: channel.token,
+      priority: 'now',
+    });
     if (outcome === 'sent') return 'sent';
     log(`peer channel unusable for ${session.id} (${outcome}) — falling back to the terminal`);
   }

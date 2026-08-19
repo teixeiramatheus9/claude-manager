@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('manager', {
   dragEnd: () => ipcRenderer.send('drag:end'),
   focusSession: (sessionId) => ipcRenderer.invoke('warp:focus', sessionId),
   sendReply: (sessionId, text) => ipcRenderer.invoke('warp:reply', { sessionId, text }),
+  readConversation: (sessionId) => ipcRenderer.invoke('transcript:tail', sessionId),
   answerQuestion: (sessionId, optionIndex) =>
     ipcRenderer.invoke('warp:answer', { sessionId, optionIndex }),
   chatWithManager: (text) => ipcRenderer.invoke('manager:chat', text),

@@ -1,0 +1,1 @@
+- Espelho da conversa no painel: o botão ≡ no card abre a conversa daquele chat (teus prompts e as respostas, direto do transcript, atualizando sozinho) com campo de resposta embaixo — dá pra acompanhar e responder sem ir ao terminal
