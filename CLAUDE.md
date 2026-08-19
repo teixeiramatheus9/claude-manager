@@ -10,7 +10,7 @@ resposta rápida direto no terminal e conversa com o gerente.
 - Código, comentários e commits em inglês; strings visíveis ao usuário em pt-BR.
 - Commits seguem Conventional Commits.
 - Testes com vitest (`npm test`) — TDD nos módulos puros (registry, parsers,
-  voice, warp, budget).
+  voice, warp, budget, display-mode, cc-sessions, cc-peer).
 - `src/hook/hook-emit.js` é standalone de propósito (roda em todo evento de
   toda sessão do Claude Code): rápido, sem deps, **SEMPRE exit 0**, hard-timeout.
 - Anti-recursão: todo `claude -p` interno seta `CLAUDE_MANAGER_INTERNAL=1`;
@@ -31,14 +31,27 @@ App Electron (src/main/index.js)
   ├── manager-chat.js      → chat com o gerente (digest local, econômico)
   ├── claude-cli.js        → runner compartilhado com contagem real de tokens
   ├── token-budget.js      → teto diário de tokens / modo economia
-  ├── warp.js              → foco de janela/aba do terminal (wmctrl + xdotool)
+  ├── display-mode.js      → decide modo managed (XWayland) vs Wayland (puro)
+  ├── cc-sessions.js       → resolve sessionId → socket/token do Claude Code
+  ├── cc-peer.js           → cliente NDJSON do socket da sessão
+  ├── warp.js              → FALLBACK: foco de janela/aba do terminal (xdotool)
   └── renderer (app.*)     → bolha, tooltip, painel, chat, configurações
 ```
 
 Pontos críticos:
-- **Wayland vs X11**: o app detecta a sessão; no X11 usa modo completo (drag
-  manual, flip nas bordas, posição salva), no Wayland degrada (drag via
-  app-region, janela única que cresce/encolhe).
+- **Wayland vs X11**: o app é lançado com `--ozone-platform=x11` e roda sob
+  XWayland, onde o mutter honra `_NET_WM_STATE_ABOVE`/`STICKY` — é a única forma
+  de ter sobreposição real no GNOME, porque o Wayland não tem API de
+  posicionamento para apps comuns. A flag **precisa** vir da linha de comando
+  (`appendSwitch` no código roda tarde demais). A decisão de modo sai de
+  `display-mode.js`, não de `XDG_SESSION_TYPE` (que continua dizendo "wayland"
+  sob XWayland). Sem `DISPLAY` ou sem a flag, degrada (drag via app-region,
+  janela única que cresce/encolhe).
+- **Canal com o Claude Code**: a resposta rápida escreve NDJSON no
+  `messagingSocketPath` de `~/.claude/sessions/<pid>.json` — independe de
+  terminal e de display server, e não pode cair no chat errado porque endereça
+  por `sessionId`. O canal está atrás de feature gate remoto, então o fallback
+  via `xdotool` continua obrigatório.
 - **Sandbox do Electron no Ubuntu 24+**: `npm start` usa `--no-sandbox`
   (só HTML local). Alternativa com sandbox: ver README.
 

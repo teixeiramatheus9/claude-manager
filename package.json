@@ -40,6 +40,16 @@
       ],
       "maintainer": "teixeiramatheus9 <teixeiramatheus9@users.noreply.github.com>",
       "synopsis": "Gerente flutuante das sessões do Claude Code"
+    },
+    "deb": {
+      "depends": [
+        "xdotool"
+      ]
+    },
+    "rpm": {
+      "depends": [
+        "xdotool"
+      ]
     }
   },
   "devDependencies": {
