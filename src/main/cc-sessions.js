@@ -171,9 +171,10 @@ export function readAdoptableSessions({
 }
 
 // Claude Code keeps transcripts under ~/.claude/projects/<flattened cwd>,
-// where both slashes and dots collapse to dashes.
+// where slashes, backslashes, drive colons and dots all collapse to dashes
+// (C:\Users\u\dev\proj -> C--Users-u-dev-proj).
 export function claudeTranscriptPath(cwd, sessionId, { home = os.homedir() } = {}) {
-  const flattened = String(cwd).replace(/[/.]/g, '-');
+  const flattened = String(cwd).replace(/[/\\:.]/g, '-');
   return path.join(home, '.claude', 'projects', flattened, `${sessionId}.jsonl`);
 }
 

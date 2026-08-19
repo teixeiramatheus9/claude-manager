@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import path from 'node:path';
 import {
   parseSessionRecord,
   isSupported,
@@ -274,7 +275,7 @@ describe('adoptable sessions', () => {
 });
 
 describe('transcript path convention', () => {
-  // Claude Code stores transcripts under ~/.claude/projects/<cwd with / and .
+  // Claude Code stores transcripts under ~/.claude/projects/<cwd with / \ : .
   // flattened to ->/<sessionId>.jsonl.
   it('derives the transcript path from cwd and session id', () => {
     const file = claudeTranscriptPath(
@@ -283,7 +284,18 @@ describe('transcript path convention', () => {
       { home: '/home/user' },
     );
     expect(file).toBe(
-      '/home/user/.claude/projects/-home-user-projects--claude-worktrees-alpha/4b706711-9840-4931-8b0f-d6d51518d6ba.jsonl',
+      path.join(
+        '/home/user',
+        '.claude',
+        'projects',
+        '-home-user-projects--claude-worktrees-alpha',
+        '4b706711-9840-4931-8b0f-d6d51518d6ba.jsonl',
+      ),
     );
+  });
+
+  it('flattens win32 drive letters and backslashes the way Claude Code does', () => {
+    const file = claudeTranscriptPath('C:\\Users\\u\\dev\\proj', 'abc', { home: 'C:\\Users\\u' });
+    expect(file).toContain(path.join('projects', 'C--Users-u-dev-proj'));
   });
 });
