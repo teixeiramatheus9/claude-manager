@@ -414,15 +414,19 @@ function replyElement(session) {
   input.value = replyDrafts.get(session.id) ?? '';
   const sendButton = document.createElement('button');
   sendButton.innerHTML = SEND_SVG;
-  sendButton.title = 'Enviar pro chat no Warp';
+  sendButton.title = 'Enviar pro chat';
   const feedback = document.createElement('div');
   feedback.className = 'reply-feedback';
   feedback.textContent = replyFeedback.get(session.id) ?? '';
 
   const FEEDBACK_TEXT = {
-    typed: 'Enviado pro chat no Warp ✓',
+    sent: 'Entregue no chat ✓',
+    typed: 'Digitado no terminal ✓',
     clipboard: 'Copiado! Cola no chat com Ctrl+V',
     failed: 'Não consegui enviar 😅 tenta de novo',
+    'terminal-not-in-x': 'Não achei o terminal. Ele roda em Wayland — abre com GDK_BACKEND=x11',
+    'no-x-windows': 'Sem acesso às janelas: instala o xdotool (sudo dnf install xdotool)',
+    'xdotool-failed': 'O xdotool falhou 😅 olha o log em ~/.config/claude-manager/log',
   };
 
   async function send() {
@@ -433,7 +437,7 @@ function replyElement(session) {
     sendButton.disabled = false;
     replyFeedback.set(session.id, FEEDBACK_TEXT[mode] ?? '');
     feedback.textContent = replyFeedback.get(session.id);
-    if (mode === 'typed') {
+    if (mode === 'sent' || mode === 'typed') {
       replyDrafts.delete(session.id);
       input.value = '';
     }

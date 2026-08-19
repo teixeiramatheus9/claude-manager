@@ -18,6 +18,8 @@ import { focusChatTab, sendReplyToWarp, answerQuestionInWarp } from './warp.js';
 import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir } from './paths.js';
 import { log } from './log.js';
 import { resolveDisplayMode } from './display-mode.js';
+import { readSessionChannel } from './cc-sessions.js';
+import { sendUserMessage } from './cc-peer.js';
 
 // Two window-management modes:
 // - X11/XWayland ("managed"): the app moves/positions its own window —
@@ -383,6 +385,22 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const session = registry.sessions.get(sessionId);
   const index = Number(optionIndex);
   if (!session || !Number.isInteger(index) || index < 0) return 'failed';
+
+  // Sending the option's own text beats simulating Down x N + Return: it needs
+  // no window, and it cannot land on the wrong option if the list scrolled.
+  const optionText = session.question?.questions?.[0]?.options?.[index];
+  const channel = readSessionChannel(session.id);
+  if (channel && typeof optionText === 'string' && optionText.trim()) {
+    const outcome = await sendUserMessage(channel.socketPath, optionText, {
+      token: channel.token,
+    });
+    if (outcome === 'sent') {
+      registry.markAnswered(sessionId);
+      return 'answered';
+    }
+    log(`peer channel unusable for answer on ${session.id} (${outcome})`);
+  }
+
   const result = await answerQuestionInWarp(sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
   });
@@ -390,14 +408,29 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   return result;
 });
 
-ipcMain.handle('warp:reply', (_event, { sessionId, text }) => {
-  const session = registry.sessions.get(sessionId);
-  const reply = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
-  if (!reply) return 'failed';
-  return sendReplyToWarp(sessionSearchKeys(session), reply, {
+// Reply path, in order of preference:
+// 1. The session's own unix socket — works on Wayland, on any terminal, and
+//    cannot deliver to the wrong chat because it is addressed by session id.
+// 2. The terminal window (xdotool), for builds where the messaging channel is
+//    gated off or the session predates it.
+async function replyToSession(session, text) {
+  const channel = session?.id ? readSessionChannel(session.id) : null;
+  if (channel) {
+    const outcome = await sendUserMessage(channel.socketPath, text, { token: channel.token });
+    if (outcome === 'sent') return 'sent';
+    log(`peer channel unusable for ${session.id} (${outcome}) — falling back to the terminal`);
+  }
+  return sendReplyToWarp(sessionSearchKeys(session), text, {
     writeClipboard: (value) => clipboard.writeText(value),
     terminal: managerConfig.terminal,
   });
+}
+
+ipcMain.handle('warp:reply', async (_event, { sessionId, text }) => {
+  const session = registry.sessions.get(sessionId);
+  const reply = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
+  if (!reply) return 'failed';
+  return replyToSession(session, reply);
 });
 
 // Manual drag (managed/X11 mode only): the renderer reports press/release on
