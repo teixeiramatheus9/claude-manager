@@ -396,6 +396,7 @@ async function enrichNotification(session) {
     projectName: session.projectName,
     text,
     kind: firstQuestion ? 'question' : 'waiting',
+    optionsCount: firstQuestion?.options?.length ?? 0,
   });
   showTooltip();
 }
