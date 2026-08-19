@@ -59,11 +59,15 @@ import { sendUserMessage } from './cc-peer.js';
 const displayMode =
   process.platform === 'darwin'
     ? { platform: 'darwin', managed: true, canInjectInput: true }
-    : resolveDisplayMode({
-        display: process.env.DISPLAY,
-        ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
-        sessionType: process.env.XDG_SESSION_TYPE,
-      });
+    : process.platform === 'win32'
+      ? // Windows always lets apps place their own windows; input goes through
+        // SendKeys (see win32-native.js).
+        { platform: 'win32', managed: true, canInjectInput: true }
+      : resolveDisplayMode({
+          display: process.env.DISPLAY,
+          ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
+          sessionType: process.env.XDG_SESSION_TYPE,
+        });
 const canPositionWindows = displayMode.managed;
 
 // The AppImage launcher drops build.linux.executableArgs, so a packaged run can
