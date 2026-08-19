@@ -7,6 +7,7 @@ import { app, shell } from 'electron';
 import electronUpdaterPackage from 'electron-updater';
 import { isNewerVersion } from './version-utils.js';
 import { pickPackageAsset } from './update-assets.js';
+import { elevationCommand, hasNoNewPrivs, hasSystemdRun } from './privileged-exec.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -56,7 +57,7 @@ async function installDmg(dmgFile) {
 // - dmg/unknown: opens the latest release page.
 // - dev (not packaged): disabled.
 export function setupUpdater({ onStatus, log, fetchFn = fetch }) {
-  const status = { mode: 'off', available: null, ready: null, installing: false };
+  const status = { mode: 'off', available: null, ready: null, installing: false, failed: false };
   const notify = () => onStatus({ ...status });
 
   if (!app.isPackaged) {
@@ -145,8 +146,15 @@ export function setupUpdater({ onStatus, log, fetchFn = fetch }) {
           : fs.existsSync('/usr/bin/dnf')
             ? ['dnf', 'install', '-y', packageFile]
             : ['rpm', '-U', packageFile];
-      log(`updater: installing via pkexec ${installArgs[0]}…`);
-      await execFileAsync('pkexec', installArgs, { timeout: INSTALL_TIMEOUT_MS });
+      const elevated = elevationCommand({
+        file: 'pkexec',
+        args: installArgs,
+        platform: process.platform,
+        noNewPrivs: hasNoNewPrivs(),
+        hasSystemdRun: hasSystemdRun(),
+      });
+      log(`updater: installing via ${elevated.file} ${installArgs[0]}…`);
+      await execFileAsync(elevated.file, elevated.args, { timeout: INSTALL_TIMEOUT_MS });
     }
     log('updater: installed, relaunching');
     app.relaunch();
@@ -159,12 +167,15 @@ export function setupUpdater({ onStatus, log, fetchFn = fetch }) {
     apply: async () => {
       if (!status.available || status.installing) return;
       status.installing = true;
+      status.failed = false;
       notify();
       try {
         await installPackage();
       } catch (error) {
-        // user cancelled the auth prompt or something broke — hand over the page
+        // user cancelled the auth prompt or something broke — say so in the
+        // banner (it used to fail silently) and hand over the release page
         log(`self-install failed: ${error}`);
+        status.failed = true;
         shell.openExternal(RELEASES_PAGE);
       } finally {
         status.installing = false;

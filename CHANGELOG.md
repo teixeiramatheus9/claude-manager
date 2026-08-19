@@ -17,6 +17,8 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 - O gerente avisa por voz quando termina de se atualizar
 
 ### Fixes
+- O botão de instalar a atualização não fazia nada no deb/rpm quando o app tinha se re-lançado sozinho para o XWayland: o relançamento marca o processo com `no_new_privs`, e o `pkexec` perde o setuid. A instalação agora sai por uma unit do systemd do usuário, fora dessa herança
+- Falha ao instalar a atualização agora aparece no banner, em vez de só no log
 - Ajustes de som (volume, timbre, mudo, TTS) voltam a valer na hora: eles moravam em cada janela, e quem toca o som é a bolinha enquanto quem configura é o painel
 - Prévia de som toca com o volume recém-escolhido, em vez do valor anterior
 - Barra dos sliders para de mostrar um valor diferente do botão em controles que não começam no zero
