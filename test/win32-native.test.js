@@ -6,7 +6,29 @@ import {
   listWindows,
   activateWindowScript,
   sendKeysScript,
+  encodeAnsiArgvText,
 } from '../src/main/win32-native.js';
+
+describe('encodeAnsiArgvText', () => {
+  it('passes text through untouched on a UTF-8 system codepage', () => {
+    expect(encodeAnsiArgvText('concluída', 65001)).toBe('concluída');
+  });
+
+  it('disguises UTF-8 bytes as cp1252 chars so the child CRT undoes it', () => {
+    // 'í' U+00ED → UTF-8 C3 AD → cp1252 chars 'Ã' (C3) + soft hyphen (AD):
+    // the child converts them back to the bytes C3 AD, i.e. valid UTF-8.
+    expect(encodeAnsiArgvText('concluída', 1252)).toBe('concluÃ­da');
+    // 'Á' U+00C1 → C3 81; 81 has no cp1252 glyph but Windows round-trips it
+    // to the C1 control char U+0081.
+    expect(encodeAnsiArgvText('Água', 1252)).toBe('Ãgua');
+    // '€' U+20AC → E2 82 AC; 0x82 maps to U+201A in cp1252.
+    expect(encodeAnsiArgvText('€', 1252)).toBe('â‚¬');
+  });
+
+  it('strips accents on any other codepage instead of speaking garbage', () => {
+    expect(encodeAnsiArgvText('missão concluída', 932)).toBe('missao concluida');
+  });
+});
 
 describe('psQuote', () => {
   it('wraps in single quotes and doubles embedded quotes', () => {
