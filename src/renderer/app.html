@@ -425,9 +425,13 @@
       }
 
       /* --- session rows --- */
+      /* every scrolling view needs flex: 1 + min-height: 0 here — without them
+         a flex child sizes to its content, overflows the panel and gets clipped
+         by the panel's overflow: hidden, so its inner scroll never engages */
       #sessions,
       #settings-pop,
-      #chat {
+      #chat,
+      #mirror {
         -webkit-app-region: no-drag;
         flex: 1;
         overflow-y: auto;
