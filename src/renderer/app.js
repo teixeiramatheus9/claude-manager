@@ -821,6 +821,8 @@ function renderUpdateBanner(update) {
     updateBanner.textContent = `⇣ instalando v${update.available}… (confirma a senha se o sistema pedir)`;
   } else if (update.ready) {
     updateBanner.textContent = `⇡ v${update.ready} pronta — [reiniciar agora]`;
+  } else if (update.failed) {
+    updateBanner.textContent = `⚠ não consegui instalar a v${update.available} — abri a página da release`;
   } else if (update.mode === 'auto') {
     updateBanner.textContent = `⇣ baixando v${update.available}…`;
   } else {
