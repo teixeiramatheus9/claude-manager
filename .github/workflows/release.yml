@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   plan:
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore: release') }}
+    if: "${{ !startsWith(github.event.head_commit.message, 'chore: release') }}"
     runs-on: ubuntu-latest
     outputs:
       bump: ${{ steps.decide.outputs.bump }}
@@ -48,7 +48,7 @@ jobs:
     outputs:
       version: ${{ steps.bump.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: bump
@@ -80,10 +80,10 @@ jobs:
       # the mac build is intentionally unsigned
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: v${{ needs.version.outputs.version }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - if: runner.os == 'Linux'
@@ -102,8 +102,19 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # The release body is whatever the merged PRs added to CHANGELOG.md
+      # since the previous tag; falls back to auto-generated notes.
       - run: |
           VERSION="v${{ needs.version.outputs.version }}"
-          NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" -f tag_name="$VERSION" --jq .body)
+          PREVIOUS=$(git tag -l 'v*' --sort=-v:refname | grep -vx "$VERSION" | head -n1)
+          NOTES=""
+          if [ -n "$PREVIOUS" ]; then
+            NOTES=$(git diff "$PREVIOUS".."$VERSION" -- CHANGELOG.md | grep '^+' | grep -v '^+++' | sed 's/^+//')
+          fi
+          if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
+            NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" -f tag_name="$VERSION" --jq .body)
+          fi
           gh release edit "$VERSION" --notes "$NOTES" --draft=false --latest
