@@ -5,6 +5,7 @@ describe('new terminal entries', () => {
   it('registers terminator and guake with tab keys', () => {
     expect(TERMINALS.terminator.nextTabKey).toBe('ctrl+Next');
     expect(TERMINALS.guake.summon).toEqual(['guake', '--show']);
+    expect(TERMINALS.blackbox.classHint).toBe('blackbox');
   });
 
   it('summons guake before hunting its window', async () => {

@@ -60,6 +60,12 @@ export const TERMINALS = {
   kitty: { label: 'Kitty', classHint: 'kitty', nextTabKey: 'ctrl+shift+bracketright', hasTabs: true },
   alacritty: { label: 'Alacritty', classHint: 'alacritty', nextTabKey: null, hasTabs: false },
   konsole: { label: 'Konsole', classHint: 'konsole', nextTabKey: 'shift+Right', hasTabs: true },
+  blackbox: {
+    label: 'Black Box',
+    classHint: 'blackbox',
+    nextTabKey: 'ctrl+Next',
+    hasTabs: true,
+  },
   terminator: {
     label: 'Terminator',
     classHint: 'terminator',
@@ -96,6 +102,7 @@ const TERMINAL_CLASS_HINTS = [
   'ptyxis',
   'terminator',
   'guake',
+  'blackbox',
   'wezterm',
 ];
 
