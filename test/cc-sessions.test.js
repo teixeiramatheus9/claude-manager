@@ -179,6 +179,35 @@ describe('live session ids', () => {
     });
     expect(ids).toBeNull();
   });
+
+  it('keeps a session whose procStart cannot be verified locally (no /proc)', () => {
+    const ids = readLiveSessionIds({
+      dir: '/sessions',
+      readdirSync: () => ['100.json'],
+      readFileSync: () => live({ procStart: '639227580029758340' }),
+      procStartFor: () => null, // Windows: /proc does not exist
+      isAlive: () => true,
+    });
+    expect([...ids]).toEqual(['alive']);
+  });
+});
+
+describe('procStart verification without /proc', () => {
+  it('readSessionChannel keeps a record whose procStart cannot be verified locally', () => {
+    const record = JSON.stringify({
+      pid: 10,
+      sessionId: 's1',
+      messagingSocketPath: '\\\\.\\pipe\\cc-s1',
+      peerProtocol: 1,
+      procStart: '639227580029758340',
+    });
+    const channel = readSessionChannel('s1', {
+      readdirSync: () => ['10.json'],
+      readFileSync: () => record,
+      procStartFor: () => null,
+    });
+    expect(channel).toMatchObject({ socketPath: '\\\\.\\pipe\\cc-s1', pid: 10 });
+  });
 });
 
 describe('adoptable sessions', () => {

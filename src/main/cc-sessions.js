@@ -113,9 +113,13 @@ export function readLiveSessionIds({
     if (!Number.isInteger(pid) || typeof sessionId !== 'string' || !sessionId) continue;
     if (!isAlive(pid)) continue;
     // A <pid>.json can outlive its process, so the pid may already belong to
-    // something else. procStart is absent on platforms without /proc.
+    // something else. procStart is absent on platforms without /proc — and a
+    // local probe that returns null means "cannot verify", not "dead".
     const procStart = typeof raw.procStart === 'string' ? raw.procStart : null;
-    if (procStart && procStartFor(pid) !== procStart) continue;
+    if (procStart) {
+      const localStart = procStartFor(pid);
+      if (localStart && localStart !== procStart) continue;
+    }
     alive.add(sessionId);
   }
   return alive;
@@ -202,7 +206,10 @@ export function readSessionChannel(
       continue;
     }
     if (!record || record.sessionId !== sessionId || !isSupported(record)) continue;
-    if (record.procStart && procStartFor(record.pid) !== record.procStart) continue;
+    if (record.procStart) {
+      const localStart = procStartFor(record.pid);
+      if (localStart && localStart !== record.procStart) continue;
+    }
 
     const keyEntry = entries.find(
       (name) => name.startsWith(`${record.pid}.`) && name.endsWith('.key'),
