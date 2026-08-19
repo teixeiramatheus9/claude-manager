@@ -2,7 +2,30 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+
+// HKCU Run beats a Startup-folder shortcut: no COM needed to create it and
+// `reg delete` removes it cleanly.
+export function buildRunRegistryCommand({ electronBinary, appDir, remove = false }) {
+  if (remove) return ['reg', ['delete', RUN_KEY, '/v', 'ClaudeManager', '/f']];
+  return [
+    'reg',
+    ['add', RUN_KEY, '/v', 'ClaudeManager', '/t', 'REG_SZ', '/d', `"${electronBinary}" "${appDir}"`, '/f'],
+  ];
+}
+
+function win32Main() {
+  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+  const appDir = path.resolve(scriptDir, '..');
+  const electronBinary = path.join(appDir, 'node_modules', 'electron', 'dist', 'electron.exe');
+  const remove = process.argv.includes('--remove');
+  const [file, args] = buildRunRegistryCommand({ electronBinary, appDir, remove });
+  execFileSync(file, args, { stdio: 'inherit' });
+  console.log(`${remove ? 'Removed' : 'Installed'} HKCU Run entry ClaudeManager`);
+}
 
 export function buildDesktopEntry({ electronBinary, appDir, iconPath }) {
   return [
@@ -68,6 +91,10 @@ function darwinMain() {
 function main() {
   if (process.platform === 'darwin') {
     darwinMain();
+    return;
+  }
+  if (process.platform === 'win32') {
+    win32Main();
     return;
   }
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
