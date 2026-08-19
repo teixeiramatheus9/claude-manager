@@ -14,6 +14,8 @@ const RUNTIMES = {
   'darwin-x64': `sherpa-onnx-${SHERPA_VERSION}-osx-x64-shared`,
   'linux-x64': `sherpa-onnx-${SHERPA_VERSION}-linux-x64-shared`,
   'linux-arm64': `sherpa-onnx-${SHERPA_VERSION}-linux-aarch64-shared-cpu`,
+  // MT = static CRT: no MSVC runtime redistributable needed on the user's box.
+  'win32-x64': `sherpa-onnx-${SHERPA_VERSION}-win-x64-shared-MT-Release`,
 };
 
 export const VOICES = {
@@ -55,7 +57,13 @@ export function voicePaths(sherpaDir, voiceId, platform = process.platform, arch
   const voiceDir = path.join(sherpaDir, voice.dirName);
   return {
     runtimeDir,
-    binary: runtimeDir ? path.join(runtimeDir, 'bin', 'sherpa-onnx-offline-tts') : null,
+    binary: runtimeDir
+      ? path.join(
+          runtimeDir,
+          'bin',
+          platform === 'win32' ? 'sherpa-onnx-offline-tts.exe' : 'sherpa-onnx-offline-tts',
+        )
+      : null,
     libDir: runtimeDir ? path.join(runtimeDir, 'lib') : null,
     voiceDir,
     model: path.join(voiceDir, voice.modelFile),

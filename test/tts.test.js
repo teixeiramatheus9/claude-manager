@@ -46,6 +46,18 @@ describe('runtime and voice resolution', () => {
     expect(faber.args.every((a) => !a.includes('kokoro'))).toBe(true);
   });
 
+  it('resolves a win32-x64 runtime with an .exe binary', () => {
+    const { binary, libDir } = voicePaths('C:\\cfg\\sherpa', 'faber', 'win32', 'x64');
+    expect(binary).toMatch(/sherpa-onnx-offline-tts\.exe$/);
+    expect(binary).toContain('win-x64-shared');
+    expect(libDir).toContain('win-x64-shared');
+  });
+
+  it('still resolves the linux binary without a suffix', () => {
+    const { binary } = voicePaths('/cfg/sherpa', 'faber', 'linux', 'x64');
+    expect(binary).toMatch(/sherpa-onnx-offline-tts$/);
+  });
+
   it('falls back to the default voice for an unknown id', () => {
     const unknown = voicePaths('/cfg', 'nope', 'linux', 'x64');
     expect(unknown.voiceDir).toContain(VOICES[DEFAULT_VOICE].dirName);
