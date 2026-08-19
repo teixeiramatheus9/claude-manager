@@ -63,14 +63,20 @@ export function sendUserMessage(
     socket.on('connect', () => {
       socket.end(`${buildFrames({ text: content, token, msgId }).join('\n')}\n`);
     });
+    // There is deliberately no attempt to tell acceptance from rejection here.
+    // On a unix socket a peer destroy() is INDISTINGUISHABLE from a clean close:
+    // the client observes end -> close with hadError=false either way, no
+    // ECONNRESET (verified by probe). So 'sent' means "handed to the socket",
+    // never "delivered" — which is why the panel must not claim delivery. Real
+    // confirmation would need either the protocol's receipts (their reply-address
+    // field is not confirmed) or reading the target session's transcript back.
     socket.on('close', () => {
       clearTimeout(timer);
       finish('sent');
     });
     socket.on('error', (error) => {
       clearTimeout(timer);
-      // A missing or unbound socket file means the session is gone; anything
-      // else is a real failure and deserves a different message to the user.
+      // A missing or unbound socket file means the session is simply gone.
       const missing = error?.code === 'ENOENT' || error?.code === 'ECONNREFUSED';
       finish(missing ? 'no-channel' : 'failed');
     });

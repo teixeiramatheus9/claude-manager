@@ -69,6 +69,25 @@ describe('claude code peer channel', () => {
     expect(outcome).toBe('no-channel');
   });
 
+  // Documents a limitation rather than a wish: a peer that accepts the
+  // connection and destroys it (what Claude Code does to a frame it will not
+  // take) looks EXACTLY like a clean close on a unix socket — end, then close
+  // with hadError=false, no ECONNRESET. So this returns 'sent', and 'sent' can
+  // never be reported to the user as "delivered". Do not "fix" this by guessing.
+  it('cannot tell a teardown from a clean close, so it still reports sent', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-peer-'));
+    const socketPath = path.join(dir, 'hostile.sock');
+    const server = net.createServer((connection) => {
+      connection.on('data', () => connection.destroy());
+    });
+    await new Promise((resolve) => server.listen(socketPath, resolve));
+    try {
+      expect(await sendUserMessage(socketPath, 'oi', { msgId: 'm3' })).toBe('sent');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  });
+
   it('refuses empty text without opening a connection', async () => {
     expect(await sendUserMessage('/nonexistent/should-not-be-touched.sock', '   ')).toBe('failed');
   });
