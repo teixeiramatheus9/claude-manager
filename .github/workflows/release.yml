@@ -109,12 +109,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      # apt mirrors hang sometimes — cap the step and retry instead of wedging
+      # the runner's azure apt mirror flakes and wedges apt — point straight
+      # at archive.ubuntu.com, cap the step and retry
       - if: matrix.needs-rpm-tools == true
         timeout-minutes: 6
         run: |
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
           for attempt in 1 2 3; do
-            if sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y rpm; then
+            if sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y --no-install-recommends rpm; then
               exit 0
             fi
             echo "apt attempt $attempt failed; retrying in 15s…"
@@ -127,11 +129,9 @@ jobs:
       - run: npx electron-builder ${{ matrix.args }} --publish always
 
   publish:
+    # only goes live when ALL four packages built — if one fails, the release
+    # stays draft; re-run the failed job and publish follows automatically
     needs: [version, build]
-    # publish whatever succeeded — a single broken target must not hold the
-    # release hostage (its package ships in a job re-run, attached to the
-    # same release)
-    if: ${{ always() && needs.version.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -17,6 +17,7 @@ const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 
 async function detectInstalledFormat() {
+  if (process.platform === 'darwin') return 'dmg';
   try {
     await execFileAsync('dpkg', ['-s', 'claude-manager']);
     return 'deb';
@@ -28,6 +29,23 @@ async function detectInstalledFormat() {
     return 'rpm';
   } catch {
     return null;
+  }
+}
+
+// macOS: mount the downloaded dmg, swap the .app in /Applications, strip the
+// quarantine flag (unsigned build) and relaunch — fully automatic.
+async function installDmg(dmgFile) {
+  const mountPoint = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-manager-update-'));
+  await execFileAsync('hdiutil', ['attach', dmgFile, '-nobrowse', '-mountpoint', mountPoint]);
+  try {
+    const appName = fs.readdirSync(mountPoint).find((entry) => entry.endsWith('.app'));
+    if (!appName) throw new Error('no .app inside the dmg');
+    const targetApp = path.join('/Applications', appName);
+    await execFileAsync('rm', ['-rf', targetApp]);
+    await execFileAsync('ditto', [path.join(mountPoint, appName), targetApp]);
+    await execFileAsync('xattr', ['-dr', 'com.apple.quarantine', targetApp]).catch(() => {});
+  } finally {
+    await execFileAsync('hdiutil', ['detach', mountPoint, '-force']).catch(() => {});
   }
 }
 
@@ -117,14 +135,19 @@ export function setupUpdater({ onStatus, log, fetchFn = fetch }) {
     if (!response.ok) throw new Error(`asset download -> ${response.status}`);
     const packageFile = path.join(os.tmpdir(), asset.name);
     fs.writeFileSync(packageFile, Buffer.from(await response.arrayBuffer()));
-    const installArgs =
-      format === 'deb'
-        ? ['apt-get', 'install', '-y', packageFile]
-        : fs.existsSync('/usr/bin/dnf')
-          ? ['dnf', 'install', '-y', packageFile]
-          : ['rpm', '-U', packageFile];
-    log(`updater: installing via pkexec ${installArgs[0]}…`);
-    await execFileAsync('pkexec', installArgs, { timeout: INSTALL_TIMEOUT_MS });
+    if (format === 'dmg') {
+      log('updater: installing dmg…');
+      await installDmg(packageFile);
+    } else {
+      const installArgs =
+        format === 'deb'
+          ? ['apt-get', 'install', '-y', packageFile]
+          : fs.existsSync('/usr/bin/dnf')
+            ? ['dnf', 'install', '-y', packageFile]
+            : ['rpm', '-U', packageFile];
+      log(`updater: installing via pkexec ${installArgs[0]}…`);
+      await execFileAsync('pkexec', installArgs, { timeout: INSTALL_TIMEOUT_MS });
+    }
     log('updater: installed, relaunching');
     app.relaunch();
     app.exit(0);

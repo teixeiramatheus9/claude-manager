@@ -2,6 +2,7 @@
 const ARCH_TOKENS = {
   deb: { x64: 'amd64', arm64: 'arm64' },
   rpm: { x64: 'x86_64', arm64: 'aarch64' },
+  dmg: { x64: 'x64', arm64: 'arm64' },
 };
 
 export function pickPackageAsset(assets, format, arch = 'x64') {

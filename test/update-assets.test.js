@@ -24,6 +24,10 @@ describe('pickPackageAsset', () => {
     expect(pickPackageAsset(only, 'deb', 'x64').name).toBe('claude-manager_0.3.0.deb');
   });
 
+  it('picks the dmg for macOS arm64', () => {
+    expect(pickPackageAsset(assets, 'dmg', 'arm64').name).toBe('Claude-Manager-0.3.0-arm64.dmg');
+  });
+
   it('returns null when the format has no asset', () => {
     expect(pickPackageAsset(assets, 'deb', 'arm64')).not.toBeNull();
     expect(pickPackageAsset([{ name: 'x.AppImage' }], 'rpm')).toBeNull();
