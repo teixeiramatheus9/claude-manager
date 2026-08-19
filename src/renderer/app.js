@@ -67,7 +67,17 @@ badge.addEventListener('click', () => {
 });
 tooltip.addEventListener('click', openPanel);
 document.getElementById('close').addEventListener('click', closePanel);
-document.getElementById('quit').addEventListener('click', () => window.manager.quit());
+const quitButton = document.getElementById('quit');
+quitButton.addEventListener('click', () => window.manager.quit());
+
+// With a tray icon the button parks the app there and the tray menu is what
+// really ends it; without one it stays the only way out, so it says so.
+function renderQuitButton(trayAvailable) {
+  quitButton.textContent = trayAvailable ? '[fechar]' : '[sair]';
+  quitButton.title = trayAvailable
+    ? 'Esconder na bandeja — pra encerrar de vez, usa o ícone lá'
+    : 'Encerrar o Claude Manager';
+}
 
 
 bubble.addEventListener('mousedown', (event) => {
@@ -877,6 +887,7 @@ function applySound(sound) {
 window.manager.onState((state) => {
   applyTheme(state.theme);
   applySound(state.sound);
+  renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);
   renderVoiceStatus(state.voiceDownloading);
   renderUsage(state.tokens);

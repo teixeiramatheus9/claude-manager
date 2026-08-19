@@ -1,11 +1,13 @@
-import { app, BrowserWindow, clipboard, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, clipboard, ipcMain, Menu, screen, Tray } from 'electron';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureHooks } from '../../scripts/install-hooks.js';
 import { SessionRegistry } from './session-registry.js';
-import { startSocketServer } from './socket-server.js';
+import { startSocketServer, stopSocketServer } from './socket-server.js';
 import { readTranscriptSnapshot } from './transcript.js';
 import { generateManagerMessage, humanizeNotification } from './manager-voice.js';
 import { askManager, findMentionedSession } from './manager-chat.js';
@@ -17,6 +19,8 @@ import { VOICES } from './sherpa-installer.js';
 import { THEMES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
 import { setupUpdater } from './updater.js';
+import { detectTrayHost, trayMenuTemplate } from './tray.js';
+import { killPendingClaude } from './claude-cli.js';
 import {
   socketPath,
   stateFile,
@@ -84,6 +88,7 @@ app.setDesktopName?.('claude-manager.desktop');
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const rendererDir = path.join(currentDir, '..', 'renderer');
 const preloadPath = path.join(rendererDir, 'preload.cjs');
+const execFileAsync = promisify(execFile);
 const iconPath = path.join(currentDir, '..', '..', 'assets', 'icon.png');
 
 const MODE_SIZES = {
@@ -115,6 +120,8 @@ const tokenBudget = new TokenBudget({ file: usageFile });
 const isEconomyMode = () => tokenBudget.isExceeded(managerConfig.tokenBudgetDaily);
 let mainWindow = null;
 let overlayWindow = null;
+let tray = null;
+let socketServer = null;
 // Top-left corner of the bubble on screen — where the overlay is anchored.
 let bubbleAnchor = null;
 let dragState = null;
@@ -136,6 +143,7 @@ function sendState() {
     update: updateStatus,
     voiceDownloading: tts.downloadingVoice(),
     theme: managerConfig.theme,
+    trayAvailable: Boolean(tray),
     sound: {
       muted: managerConfig.muted,
       volume: managerConfig.soundVolume,
@@ -263,7 +271,51 @@ ipcMain.on('overlay:toggle-panel', () => {
 ipcMain.on('overlay:open-panel', () => openPanel());
 ipcMain.on('overlay:close', () => hideOverlay());
 
-ipcMain.on('app:quit', () => app.quit());
+function bubbleVisible() {
+  return Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible());
+}
+
+function hideToTray() {
+  hideOverlay();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+  refreshTrayMenu();
+}
+
+function showBubble() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.show();
+  refreshTrayMenu();
+}
+
+function refreshTrayMenu() {
+  if (!tray) return;
+  const actions = {
+    toggle: () => (bubbleVisible() ? hideToTray() : showBubble()),
+    quit: () => app.quit(),
+  };
+  const template = trayMenuTemplate({ bubbleVisible: bubbleVisible() }).map((item) =>
+    item.id ? { ...item, click: actions[item.id] } : item,
+  );
+  tray.setContextMenu(Menu.buildFromTemplate(template));
+}
+
+// Hiding into the tray is only offered where an icon can actually appear.
+// GNOME without the appindicator extension has no host, and hiding there would
+// leave no bubble, no menu and no way back — so the button keeps quitting.
+async function setupTray() {
+  const available = await detectTrayHost({ platform: process.platform, execFn: execFileAsync });
+  if (!available) {
+    log('tray: no StatusNotifierItem host on this session — close keeps quitting for real');
+    return;
+  }
+  tray = new Tray(iconPath);
+  tray.setToolTip('Claude Manager');
+  tray.on('click', () => (bubbleVisible() ? hideToTray() : showBubble()));
+  refreshTrayMenu();
+  sendState();
+}
+
+ipcMain.on('app:quit', () => (tray ? hideToTray() : app.quit()));
 
 
 const windowOptions = {
@@ -778,7 +830,8 @@ app.whenReady().then(() => {
   hydrateRegistry();
   reapDeadSessions();
   createWindows();
-  startSocketServer(socketPath, onHookEvent, log);
+  socketServer = startSocketServer(socketPath, onHookEvent, log);
+  setupTray();
   registry.on('change', sendState);
   registry.on('change', scheduleSessionsSave);
   setInterval(() => registry.prune(), PRUNE_INTERVAL_MS);
@@ -786,4 +839,15 @@ app.whenReady().then(() => {
   updaterHandle = setupUpdater({ onStatus: onUpdateStatus, log });
 });
 
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => {
+  // with a tray icon the app lives on with every window hidden
+  if (!tray) app.quit();
+});
+
+app.on('before-quit', () => {
+  tts.stopSpeaking();
+  killPendingClaude();
+  stopSocketServer(socketServer, socketPath);
+  tray?.destroy();
+  tray = null;
+});

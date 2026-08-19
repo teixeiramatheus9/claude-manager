@@ -16,12 +16,28 @@ export function parseCliJson(stdout) {
 // Runs one headless prompt on Haiku with the anti-recursion guard set.
 // Resolves {text, tokens} or null (spawn failure, timeout, non-zero exit,
 // unparseable output) — never rejects.
+// Quitting used to orphan a claude -p mid-flight: it is only killed on the
+// timeout, so it kept running (and spending tokens) after the app was gone.
+const pending = new Set();
+
+export function killPendingClaude() {
+  for (const child of pending) {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // already dead
+    }
+  }
+  pending.clear();
+}
+
 export function runClaude({ prompt, timeoutMs = 15000, spawnFn = spawn }) {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value) => {
       if (settled) return;
       settled = true;
+      if (child) pending.delete(child);
       resolve(value);
     };
 
@@ -36,6 +52,7 @@ export function runClaude({ prompt, timeoutMs = 15000, spawnFn = spawn }) {
       return;
     }
 
+    pending.add(child);
     let stdout = '';
     const timer = setTimeout(() => {
       try {
