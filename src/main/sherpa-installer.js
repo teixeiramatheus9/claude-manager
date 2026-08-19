@@ -17,7 +17,7 @@ const RUNTIMES = {
 
 export const VOICES = {
   santa: {
-    label: 'Santa (neural, ~350MB)',
+    label: 'Santa',
     dirName: 'kokoro-multi-lang-v1_0',
     modelFile: 'model.onnx',
     args: (dir) => [
@@ -30,7 +30,7 @@ export const VOICES = {
     ],
   },
   faber: {
-    label: 'Faber (neural, ~85MB)',
+    label: 'Faber',
     dirName: 'vits-piper-pt_BR-faber-medium',
     modelFile: 'pt_BR-faber-medium.onnx',
     args: (dir) => [
