@@ -290,6 +290,7 @@ ttsCheckbox.addEventListener('change', () => {
 
 // --- manager config (terminal + daily token budget) ---
 const terminalSelect = document.getElementById('terminal');
+const voiceSelect = document.getElementById('voice');
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
 const usageLine = document.getElementById('usage-line');
@@ -308,12 +309,22 @@ window.manager.getConfig().then((config) => {
     );
   }
   terminalSelect.value = config.terminal;
+  if (Array.isArray(config.voices) && config.voices.length) {
+    voiceSelect.replaceChildren(
+      ...config.voices.map(({ value, label }) => new Option(label, value)),
+    );
+  }
+  voiceSelect.value = config.voice;
   budgetInput.value = String(config.tokenBudgetDaily);
   renderBudgetLabel(config.tokenBudgetDaily);
 });
 
 terminalSelect.addEventListener('change', () => {
   window.manager.setConfig({ terminal: terminalSelect.value });
+});
+
+voiceSelect.addEventListener('change', () => {
+  window.manager.setConfig({ voice: voiceSelect.value });
 });
 
 budgetInput.addEventListener('input', () => renderBudgetLabel(Number(budgetInput.value)));
