@@ -5,11 +5,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { PEER_FROM, buildFrames, sendUserMessage } from '../src/main/cc-peer.js';
 
+// Named pipes are the win32 transport; a fresh name per test avoids collisions.
+function testSocketPath(dir, name) {
+  return process.platform === 'win32'
+    ? `\\\\.\\pipe\\cm-test-${name}-${process.pid}-${Math.random().toString(36).slice(2)}`
+    : path.join(dir, name);
+}
+
 // Stands in for a live Claude Code session: collects every newline-delimited
 // frame a client writes to a throwaway socket.
 async function withFakeSession(handler) {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-peer-'));
-  const socketPath = path.join(dir, 'peer.sock');
+  const socketPath = testSocketPath(dir, 'peer.sock');
   const received = [];
   const server = net.createServer((connection) => {
     let buffer = '';
@@ -93,7 +100,7 @@ describe('claude code peer channel', () => {
   // never be reported to the user as "delivered". Do not "fix" this by guessing.
   it('cannot tell a teardown from a clean close, so it still reports sent', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-peer-'));
-    const socketPath = path.join(dir, 'hostile.sock');
+    const socketPath = testSocketPath(dir, 'hostile.sock');
     const server = net.createServer((connection) => {
       connection.on('data', () => connection.destroy());
     });

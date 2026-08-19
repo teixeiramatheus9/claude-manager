@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import path from 'node:path';
 import {
   TERMINALS,
   focusChatTab,
@@ -140,7 +141,7 @@ describe('darwin terminal metadata', () => {
   });
 
   it('prefers the bundled wsh binary when present', () => {
-    expect(wshBinary(() => true)).toContain('waveterm/bin/wsh');
+    expect(wshBinary(() => true)).toContain(path.join('waveterm', 'bin', 'wsh'));
     expect(wshBinary(() => false)).toBe('wsh');
   });
 });
