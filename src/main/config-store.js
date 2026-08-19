@@ -8,6 +8,7 @@ export const DEFAULT_CONFIG = {
   terminal: 'auto',
   voice: DEFAULT_VOICE,
   theme: DEFAULT_THEME,
+  crt: false,
   panelScale: PANEL_SCALE.default,
   muted: false,
   soundVolume: 70,

@@ -8,6 +8,7 @@ export const THEMES = {
   mono: { label: 'monocromo' },
   magma: { label: 'magma reator' },
   matrix: { label: 'matrix code' },
+  pipboy: { label: 'pip-boy 3000' },
 };
 
 export const DEFAULT_THEME = 'aco';

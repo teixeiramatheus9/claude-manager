@@ -11,6 +11,8 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 ## Não lançado
 
 ### Feats
+- Tema "pip-boy 3000": fósforo verde no escuro, com o texto mais claro que a cor de destaque como num tubo de verdade
+- Interruptor "tubo crt" nas configurações: liga scanline, brilho de fósforo, franja RGB, flicker irregular, ruído, vinheta e curvatura — e vale por cima de qualquer tema, não só do pip-boy (experimenta no âmbar crt e no matrix code)
 - Notificação por voz da pergunta agora diz quantas opções tem pra escolher ("tem uma pergunta no X com 3 opções")
 - Sete temas de cor (azul-aço, âmbar crt, magenta synth, ciano gelo, monocromo, magma reator, matrix code), com o logo acompanhando a cor de cada um
 - Tamanho do painel ajustável de 80% a 160% — a fonte e os controles crescem junto, não só a janela

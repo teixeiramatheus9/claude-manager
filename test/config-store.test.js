@@ -10,6 +10,11 @@ describe('config store', () => {
     expect(loadConfig(path.join(dir, 'config.json'))).toEqual(DEFAULT_CONFIG);
   });
 
+  it('leaves the crt overlay off until it is asked for', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-config-'));
+    expect(loadConfig(path.join(dir, 'config.json')).crt).toBe(false);
+  });
+
   it('round-trips and merges defaults for missing keys', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-config-'));
     const file = path.join(dir, 'config.json');
