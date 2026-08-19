@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('manager', {
   quit: () => ipcRenderer.send('app:quit'),
   panelOpened: () => ipcRenderer.send('panel:opened'),
   dismissMessage: (sessionId) => ipcRenderer.send('message:dismiss', sessionId),
+  removeSession: (sessionId) => ipcRenderer.send('session:remove', sessionId),
   applyUpdate: () => ipcRenderer.send('update:apply'),
   checkUpdates: () => ipcRenderer.invoke('update:check'),
   dragStart: () => ipcRenderer.send('drag:start'),

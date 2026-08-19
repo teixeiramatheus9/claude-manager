@@ -666,7 +666,15 @@ function sessionElement(session) {
   const time = document.createElement('span');
   time.className = 'time';
   time.textContent = `${STATUS_LABEL[state] ?? state} ${relativeTime(session.updatedAt)}`;
-  top.append(dot, name, time);
+  const close = document.createElement('button');
+  close.className = 'session-close';
+  close.textContent = '✕';
+  close.title = 'Fechar este chat';
+  close.addEventListener('click', (event) => {
+    event.stopPropagation();
+    window.manager.removeSession(session.id);
+  });
+  top.append(dot, name, time, close);
   card.append(top);
 
   const project = document.createElement('div');

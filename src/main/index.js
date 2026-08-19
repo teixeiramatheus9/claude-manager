@@ -353,6 +353,8 @@ ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('message:dismiss', (_event, sessionId) => registry.dismissMessage(sessionId));
 
+ipcMain.on('session:remove', (_event, sessionId) => registry.remove(sessionId));
+
 ipcMain.on('update:apply', () => updaterHandle.apply());
 
 ipcMain.handle('update:check', async () => {

@@ -114,6 +114,13 @@ export class SessionRegistry extends EventEmitter {
     this.emit('change');
   }
 
+  // Closing a chat drops it for good; a new event for the same id brings it
+  // back as a fresh session.
+  remove(sessionId) {
+    if (!this.sessions.delete(sessionId)) return;
+    this.emit('change');
+  }
+
   markAllRead() {
     let changed = false;
     for (const session of this.sessions.values()) {
