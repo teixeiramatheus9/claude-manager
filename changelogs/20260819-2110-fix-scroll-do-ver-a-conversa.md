@@ -1,0 +1,1 @@
+- "Ver a conversa" agora rola: a view do espelho crescia do tamanho do conteúdo, estourava o painel e era cortada — dava pra ver só o começo das mensagens; agora ela ocupa a altura do painel e a lista de mensagens rola como a do chat
