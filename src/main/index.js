@@ -19,6 +19,7 @@ import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir }
 import { log } from './log.js';
 import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
 import { readSessionChannel } from './cc-sessions.js';
+import { readInboundPolicy, setInboundPolicy } from './claude-settings.js';
 import { sendUserMessage } from './cc-peer.js';
 
 // Two window-management modes:
@@ -503,29 +504,62 @@ ipcMain.on('drag:end', () => {
 // Self-registers the Claude Code hooks on startup, so packaged installs
 // (AppImage/deb/rpm) work out of the box. ELECTRON_RUN_AS_NODE turns this
 // app's own binary into the hook runtime — no system Node required.
+const claudeSettingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+
+function readClaudeSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf8'));
+  } catch {
+    return {}; // no settings yet — start from empty
+  }
+}
+
+// Every write backs the file up first: this is the user's global Claude Code
+// config, not the app's own.
+function writeClaudeSettings(next) {
+  if (fs.existsSync(claudeSettingsPath)) {
+    fs.copyFileSync(claudeSettingsPath, `${claudeSettingsPath}.claude-manager-${Date.now()}.bak`);
+  }
+  fs.mkdirSync(path.dirname(claudeSettingsPath), { recursive: true });
+  fs.writeFileSync(claudeSettingsPath, `${JSON.stringify(next, null, 2)}\n`);
+}
+
 function ensureHooksInstalled() {
   try {
-    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
     const hookScript = path.join(currentDir, '..', 'hook', 'hook-emit.js');
     const command = `ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${hookScript}"`;
-    let settings = {};
-    try {
-      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    } catch {
-      // no settings yet — start from empty
-    }
+    const settings = readClaudeSettings();
     const next = ensureHooks(settings, command);
     if (JSON.stringify(next) === JSON.stringify(settings)) return;
-    if (fs.existsSync(settingsPath)) {
-      fs.copyFileSync(settingsPath, `${settingsPath}.claude-manager-${Date.now()}.bak`);
-    }
-    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
-    fs.writeFileSync(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
+    writeClaudeSettings(next);
     log(`hooks self-installed: ${command}`);
   } catch (error) {
     log(`ensureHooksInstalled failed: ${error}`);
   }
 }
+
+// crossSessionInbound decides what a session does with the quick reply this app
+// sends. It lives in the user's Claude Code settings, so the app only ever
+// writes the user level — a repo or managed setting can still tighten it, and
+// the panel says so instead of promising an outcome.
+ipcMain.handle('inbound:get', () => readInboundPolicy(readClaudeSettings()));
+
+ipcMain.handle('inbound:set', (_event, value) => {
+  const settings = readClaudeSettings();
+  const next = setInboundPolicy(settings, value);
+  if (!next) {
+    log(`inbound policy refused: ${value}`);
+    return readInboundPolicy(settings);
+  }
+  try {
+    writeClaudeSettings(next);
+    log(`crossSessionInbound set to ${value}`);
+  } catch (error) {
+    log(`inbound policy write failed: ${error}`);
+    return readInboundPolicy(settings);
+  }
+  return readInboundPolicy(next);
+});
 
 function hydrateRegistry() {
   try {

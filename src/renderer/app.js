@@ -289,6 +289,39 @@ ttsCheckbox.addEventListener('change', () => {
 });
 
 // --- manager config (terminal + daily token budget) ---
+const inboundSelect = document.getElementById('inbound');
+const inboundHint = document.getElementById('inbound-hint');
+
+// Each option carries its real consequence. "Aceitar direto" loosens a gate that
+// protects sessions running without permission prompts, and it does so for every
+// local process — not just this app — so the panel says that out loud.
+const INBOUND_HINTS = {
+  default: 'Entrega quando os modos de permissão casam; senão o chat pede sua confirmação.',
+  accept: '⚠ Entrega sem confirmação — vale pra qualquer processo local, não só pro gerente.',
+  hold: 'Toda mensagem espera você aprovar no chat.',
+  refuse: 'O chat não recebe nada do gerente.',
+};
+
+function renderInboundHint(value) {
+  const base = INBOUND_HINTS[value] ?? '';
+  // The user level is all this app writes; a repo or managed setting can still
+  // tighten it, and promising otherwise would be a lie.
+  inboundHint.textContent = `${base} Configurações do repositório ou da organização podem restringir por cima.`;
+}
+
+window.manager.getInboundPolicy().then((value) => {
+  inboundSelect.value = value;
+  renderInboundHint(value);
+});
+
+inboundSelect.addEventListener('change', async () => {
+  const applied = await window.manager.setInboundPolicy(inboundSelect.value);
+  // Trust what main reports back, not what was clicked: a rejected or failed
+  // write must not leave the panel showing a value that is not on disk.
+  inboundSelect.value = applied;
+  renderInboundHint(applied);
+});
+
 const terminalSelect = document.getElementById('terminal');
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
@@ -420,7 +453,7 @@ function replyElement(session) {
   feedback.textContent = replyFeedback.get(session.id) ?? '';
 
   const FEEDBACK_TEXT = {
-    sent: 'Entregue no chat ✓',
+    sent: 'Enviado pro chat',
     typed: 'Digitado no terminal ✓',
     clipboard: 'Copiado! Cola no chat com Ctrl+V',
     failed: 'Não consegui enviar 😅 tenta de novo',
