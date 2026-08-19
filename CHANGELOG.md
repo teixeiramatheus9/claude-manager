@@ -11,6 +11,7 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 ## Não lançado
 
 ### Feats
+- Terminator e Guake entram no seletor de terminal — o Guake (drop-down) é invocado automaticamente antes do foco
 - Notificação por voz da pergunta agora diz quantas opções tem pra escolher ("tem uma pergunta no X com 3 opções")
 - Sete temas de cor (azul-aço, âmbar crt, magenta synth, ciano gelo, monocromo, magma reator, matrix code), com o logo acompanhando a cor de cada um
 - Tamanho do painel ajustável de 80% a 160% — a fonte e os controles crescem junto, não só a janela
