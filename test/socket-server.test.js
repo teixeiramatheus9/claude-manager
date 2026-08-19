@@ -1,9 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import net from 'node:net';
+import fs from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { startSocketServer } from '../src/main/socket-server.js';
+import { startSocketServer, stopSocketServer } from '../src/main/socket-server.js';
 
 function sendLines(socketFile, payload) {
   return new Promise((resolve, reject) => {
@@ -60,5 +61,15 @@ describe('socket server', () => {
       second.on('error', reject);
     });
     second.close();
+  });
+
+  it('takes the socket file down with it on quit', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-server-'));
+    const socketFile = path.join(dir, 'quit.sock');
+    const server = startSocketServer(socketFile, () => {}, () => {});
+    await new Promise((resolve) => server.on('listening', resolve));
+    expect(fs.existsSync(socketFile)).toBe(true);
+    stopSocketServer(server, socketFile);
+    expect(fs.existsSync(socketFile)).toBe(false);
   });
 });

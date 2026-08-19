@@ -1,10 +1,11 @@
 name: changelog
 
-# feat/*, fix/* and release/* PRs MUST update CHANGELOG.md — the added text
-# becomes the published release note.
+# feat/*, fix/* and release/* PRs MUST add a file to changelogs/ — one file per
+# change, never a shared one, so two PRs can never conflict over a release note.
+# See changelogs.md for the format.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**', 'feat/[0-9]*']
 
 jobs:
   changelog:
@@ -22,9 +23,25 @@ jobs:
             feat/*|fix/*|release/*) ;;
             *) echo "branch '$HEAD_REF' não exige release note ✓"; exit 0 ;;
           esac
-          if git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -qx 'CHANGELOG.md'; then
-            echo "CHANGELOG.md atualizado ✓"
-          else
-            echo "::error::PRs de feat/fix/release DEVEM atualizar o CHANGELOG.md (seção 'Não lançado') — essa descrição vira a release note."
+          ADDED=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" -- changelogs/)
+          if [ -z "$ADDED" ]; then
+            echo "::error::PRs de feat/fix/release DEVEM adicionar um arquivo em changelogs/ (veja changelogs.md) — ele vira a nota da release."
             exit 1
           fi
+          STATUS=0
+          while IFS= read -r file; do
+            case "$(basename "$file")" in
+              [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]-feat-*.md) ;;
+              [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9]-fix-*.md) ;;
+              *)
+                echo "::error file=$file::nome fora do padrão AAAAMMDD-HHMM-<feat|fix>-<slug>.md (veja changelogs.md)"
+                STATUS=1
+                ;;
+            esac
+            if [ ! -s "$file" ]; then
+              echo "::error file=$file::arquivo de changelog vazio"
+              STATUS=1
+            fi
+          done <<< "$ADDED"
+          [ "$STATUS" -eq 0 ] && echo "release note adicionada ✓"
+          exit "$STATUS"

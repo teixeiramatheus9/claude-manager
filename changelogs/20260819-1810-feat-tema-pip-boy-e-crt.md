@@ -1,0 +1,2 @@
+- Tema "pip-boy 3000": fósforo verde no escuro, com o texto mais claro que a cor de destaque como num tubo de verdade
+- Interruptor "tubo crt" nas configurações: liga scanline, brilho de fósforo, franja RGB, flicker irregular, ruído, vinheta e curvatura — e vale por cima de qualquer tema, não só do pip-boy (experimenta no âmbar crt e no matrix code)

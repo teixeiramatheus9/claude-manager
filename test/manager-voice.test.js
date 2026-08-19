@@ -63,7 +63,8 @@ describe('manager voice', () => {
   it('fallbackMessage interpolates the project name', () => {
     const fallback = fallbackMessage('projeto-alpha', () => 0);
     expect(fallback.message).toContain('projeto-alpha');
-    expect(fallback.title).toBeTruthy();
+    // no title on purpose: a generic one would overwrite the chat's subject
+    expect(fallback.title).toBeUndefined();
   });
 
   it('generateManagerMessage returns parsed AI output, token usage and sets the recursion guard', async () => {

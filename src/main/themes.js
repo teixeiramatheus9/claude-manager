@@ -11,4 +11,4 @@ export const THEMES = {
   pipboy: { label: 'pip-boy 3000' },
 };
 
-export const DEFAULT_THEME = 'aco';
+export const DEFAULT_THEME = 'mono';

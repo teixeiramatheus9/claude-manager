@@ -1,0 +1,1 @@
+- Release note deixa de ser um arquivo só: cada mudança agora tem o próprio arquivo em `changelogs/` (`AAAAMMDD-HHMM-<feat|fix>-<slug>.md`), então duas PRs nunca mais conflitam por causa de changelog. O `CHANGELOG.md` fica como histórico até a v0.8.1 e a nota publicada passa a ser a junção dos arquivos adicionados desde a tag anterior

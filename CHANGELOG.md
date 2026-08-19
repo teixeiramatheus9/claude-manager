@@ -1,18 +1,12 @@
 # Release Notes
 
-Toda PR de `feat/*`, `fix/*` ou `release/*` DEVE adicionar sua descrição aqui,
-na seção **Não lançado** (o CI reprova a PR sem isso). A primeira feat da
-rodada cria a seção `### Feats`; o primeiro fix cria a `### Fixes`. PRs de
-`release/*` escrevem a nota completa da versão. No corte da release, tudo que
-foi adicionado aqui desde a última tag vira o corpo da release no GitHub.
+> **Histórico.** Este arquivo guarda as notas até a v0.8.1 e não é mais editado
+> por PRs. Novas entradas vão em arquivos próprios dentro de `changelogs/` —
+> veja `changelogs.md`.
 
-Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
-
-## Não lançado
+## Até a v0.8.1
 
 ### Feats
-- Tema "pip-boy 3000": fósforo verde no escuro, com o texto mais claro que a cor de destaque como num tubo de verdade
-- Interruptor "tubo crt" nas configurações: liga scanline, brilho de fósforo, franja RGB, flicker irregular, ruído, vinheta e curvatura — e vale por cima de qualquer tema, não só do pip-boy (experimenta no âmbar crt e no matrix code)
 - Notificação por voz da pergunta agora diz quantas opções tem pra escolher ("tem uma pergunta no X com 3 opções")
 - Sete temas de cor (azul-aço, âmbar crt, magenta synth, ciano gelo, monocromo, magma reator, matrix code), com o logo acompanhando a cor de cada um
 - Tamanho do painel ajustável de 80% a 160% — a fonte e os controles crescem junto, não só a janela

@@ -1,0 +1,1 @@
+- Ícone na bandeja do sistema: fechar pelo painel estaciona o app na bandeja, e o encerrar de vez fica no menu dela. Onde a sessão não tem bandeja (GNOME sem a extensão appindicator, por exemplo), o botão continua encerrando de verdade em vez de esconder o app sem volta

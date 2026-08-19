@@ -42,6 +42,7 @@ export class SessionRegistry extends EventEmitter {
       promptPreview: null,
       question: null,
       managerMessage: null,
+      lastMessage: null,
       unread: false,
       updatedAt: 0,
       wave: null,
@@ -59,6 +60,7 @@ export class SessionRegistry extends EventEmitter {
       session.status = STATUS.WORKING;
       session.unread = false;
       session.managerMessage = null;
+      session.lastMessage = null;
       session.question = null;
       if (!session.promptPreview && typeof event.prompt === 'string' && event.prompt.trim()) {
         const preview = event.prompt.trim();
@@ -76,6 +78,15 @@ export class SessionRegistry extends EventEmitter {
     this.sessions.set(sessionId, session);
     this.emit('change');
     return session;
+  }
+
+  // What the chat itself said, digested for the card. The manager's own phrase
+  // stays in managerMessage for the tooltip and the voice.
+  setLastMessage(sessionId, lastMessage) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.lastMessage = lastMessage;
+    this.emit('change');
   }
 
   setManagerMessage(sessionId, { title, message }) {

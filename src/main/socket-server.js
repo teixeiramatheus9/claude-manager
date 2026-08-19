@@ -35,3 +35,18 @@ export function startSocketServer(socketPath, onEvent, log) {
   server.listen(socketPath);
   return server;
 }
+
+// The socket file used to be left behind on quit — only the next start cleaned
+// it up, and only because it unlinks a stale one before listening.
+export function stopSocketServer(server, socketPath) {
+  try {
+    server?.close();
+  } catch {
+    // never listened
+  }
+  try {
+    fs.unlinkSync(socketPath);
+  } catch {
+    // already gone
+  }
+}
