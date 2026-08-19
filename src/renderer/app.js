@@ -67,7 +67,17 @@ badge.addEventListener('click', () => {
 });
 tooltip.addEventListener('click', openPanel);
 document.getElementById('close').addEventListener('click', closePanel);
-document.getElementById('quit').addEventListener('click', () => window.manager.quit());
+const quitButton = document.getElementById('quit');
+quitButton.addEventListener('click', () => window.manager.quit());
+
+// With a tray icon the button parks the app there and the tray menu is what
+// really ends it; without one it stays the only way out, so it says so.
+function renderQuitButton(trayAvailable) {
+  quitButton.textContent = trayAvailable ? '[fechar]' : '[sair]';
+  quitButton.title = trayAvailable
+    ? 'Esconder na bandeja — pra encerrar de vez, usa o ícone lá'
+    : 'Encerrar o Claude Manager';
+}
 
 
 bubble.addEventListener('mousedown', (event) => {
@@ -835,6 +845,17 @@ function renderUpdateBanner(update) {
   updateBanner.disabled = Boolean(update.installing);
 }
 
+const trayStatusLine = document.getElementById('tray-status');
+
+// GNOME picks up a newly installed extension only when the shell starts, so
+// the tray this app just installed can only appear in the next session.
+function renderTrayStatus(needsRelogin) {
+  trayStatusLine.classList.toggle('hidden', !needsRelogin);
+  if (needsRelogin) {
+    trayStatusLine.textContent = '# bandeja instalada — ela aparece no próximo login';
+  }
+}
+
 const voiceStatusLine = document.getElementById('voice-status');
 
 function renderVoiceStatus(voice) {
@@ -881,8 +902,10 @@ function applySound(sound) {
 window.manager.onState((state) => {
   applyTheme(state.theme);
   applySound(state.sound);
+  renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);
   renderVoiceStatus(state.voiceDownloading);
+  renderTrayStatus(state.trayNeedsRelogin);
   renderUsage(state.tokens);
   renderBadge(state.sessions);
   lastUnreadCount = state.unread;

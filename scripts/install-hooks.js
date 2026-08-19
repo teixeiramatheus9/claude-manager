@@ -43,6 +43,12 @@ export function removeHooks(settings, command) {
 // current command, leaving other tools' hooks untouched.
 export const HOOK_MARKER = 'hook-emit.js';
 
+// Quitting takes this app's hooks down with it — by marker, so an old install
+// path or runtime goes too, and other tools' hooks stay.
+export function removeAppHooks(settings) {
+  return removeMatching(settings, (candidate) => candidate.includes(HOOK_MARKER));
+}
+
 export function ensureHooks(settings, command) {
   const cleaned = removeMatching(
     settings,
