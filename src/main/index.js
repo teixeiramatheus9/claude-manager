@@ -1,8 +1,10 @@
 import { app, BrowserWindow, clipboard, ipcMain, screen } from 'electron';
 import { spawn as spawnProcess } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ensureHooks } from '../../scripts/install-hooks.js';
 import { SessionRegistry } from './session-registry.js';
 import { startSocketServer } from './socket-server.js';
 import { readTranscriptSnapshot } from './transcript.js';
@@ -413,6 +415,33 @@ ipcMain.on('drag:end', () => {
   persistAnchor();
 });
 
+// Self-registers the Claude Code hooks on startup, so packaged installs
+// (AppImage/deb/rpm) work out of the box. ELECTRON_RUN_AS_NODE turns this
+// app's own binary into the hook runtime — no system Node required.
+function ensureHooksInstalled() {
+  try {
+    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+    const hookScript = path.join(currentDir, '..', 'hook', 'hook-emit.js');
+    const command = `ELECTRON_RUN_AS_NODE=1 "${process.execPath}" "${hookScript}"`;
+    let settings = {};
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    } catch {
+      // no settings yet — start from empty
+    }
+    const next = ensureHooks(settings, command);
+    if (JSON.stringify(next) === JSON.stringify(settings)) return;
+    if (fs.existsSync(settingsPath)) {
+      fs.copyFileSync(settingsPath, `${settingsPath}.claude-manager-${Date.now()}.bak`);
+    }
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
+    log(`hooks self-installed: ${command}`);
+  } catch (error) {
+    log(`ensureHooksInstalled failed: ${error}`);
+  }
+}
+
 function hydrateRegistry() {
   try {
     registry.hydrate(JSON.parse(fs.readFileSync(sessionsFile, 'utf8')));
@@ -436,6 +465,7 @@ function scheduleSessionsSave() {
 }
 
 app.whenReady().then(() => {
+  ensureHooksInstalled();
   hydrateRegistry();
   createMainWindow();
   startSocketServer(socketPath, onHookEvent, log);

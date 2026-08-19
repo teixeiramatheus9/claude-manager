@@ -19,19 +19,36 @@ export function addHooks(settings, command) {
   return next;
 }
 
-export function removeHooks(settings, command) {
+function removeMatching(settings, shouldRemove) {
   const next = { ...settings, hooks: { ...(settings.hooks ?? {}) } };
   for (const eventName of HOOK_EVENTS) {
     const groups = (next.hooks[eventName] ?? [])
       .map((group) => ({
         ...group,
-        hooks: (group.hooks ?? []).filter((hook) => hook.command !== command),
+        hooks: (group.hooks ?? []).filter((hook) => !shouldRemove(hook.command ?? '')),
       }))
       .filter((group) => group.hooks.length > 0);
     if (groups.length > 0) next.hooks[eventName] = groups;
     else delete next.hooks[eventName];
   }
   return next;
+}
+
+export function removeHooks(settings, command) {
+  return removeMatching(settings, (candidate) => candidate === command);
+}
+
+// Every install of this app registers a command containing the hook script
+// name; ensureHooks swaps any stale variant (old path, old runtime) for the
+// current command, leaving other tools' hooks untouched.
+export const HOOK_MARKER = 'hook-emit.js';
+
+export function ensureHooks(settings, command) {
+  const cleaned = removeMatching(
+    settings,
+    (candidate) => candidate.includes(HOOK_MARKER) && candidate !== command,
+  );
+  return addHooks(cleaned, command);
 }
 
 function main() {

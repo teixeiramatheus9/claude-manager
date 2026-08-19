@@ -55,7 +55,12 @@ npm run dist   # gera AppImage + .deb + .rpm em dist/
 
 O AppImage roda em qualquer distro sem instalar nada. Pra gerar o .deb e o
 .rpm o sistema precisa de `binutils` e `rpm` (`sudo apt install binutils rpm`).
-Obs.: no pacote, os hooks/autostart ainda se instalam via repo (experimental).
+
+**Instalou pelo pacote?** Os hooks do Claude Code se **auto-registram na
+primeira execução** (com backup do settings.json) — sem precisar do repo nem
+de Node no sistema. Só instala `wmctrl` e `xdotool` pra integração com o
+terminal (Fedora: `sudo dnf install wmctrl xdotool`) e usa sessão **X11/Xorg**
+pro modo completo.
 
 ## Sandbox do Electron no Ubuntu 24+
 
