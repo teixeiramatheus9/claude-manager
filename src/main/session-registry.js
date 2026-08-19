@@ -98,19 +98,17 @@ export class SessionRegistry extends EventEmitter {
     this.emit('change');
   }
 
-  dismissMessage(sessionId) {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    session.managerMessage = null;
-    session.question = null;
-    session.unread = false;
-    this.emit('change');
-  }
-
   setQuestion(sessionId, question) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     session.question = question;
+    this.emit('change');
+  }
+
+  // Closing a chat drops it for good; a new event for the same id brings it
+  // back as a fresh session.
+  remove(sessionId) {
+    if (!this.sessions.delete(sessionId)) return;
     this.emit('change');
   }
 

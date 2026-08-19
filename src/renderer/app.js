@@ -7,57 +7,52 @@ const panel = document.getElementById('panel');
 const sessionsContainer = document.getElementById('sessions');
 
 const bubble = document.getElementById('bubble');
+const headerPath = document.getElementById('header-path');
 
-const TOOLTIP_HIDE_MS = 8000;
+const PATHS = { sessions: '~/.claude/sessions', chat: '~/.claude/chats', config: '~/.claude/config' };
+
+function renderHeaderPath() {
+  const view = chatOpen ? 'chat' : settingsPop.classList.contains('hidden') ? 'sessions' : 'config';
+  headerPath.textContent = PATHS[view];
+}
+
+// One HTML, two windows: the bubble window never resizes, the overlay window
+// carries the panel and the toast and is placed by the main process.
+const view = new URLSearchParams(location.search).get('view') ?? 'bubble';
+document.body.classList.add(`view-${view}`);
 let panelOpen = false;
-let tooltipTimer = null;
 // managed = X11 session: main process handles drag/click detection on the
 // bubble; false = Wayland, where the compositor drags via app-region CSS.
 let managed = false;
 
 const STATUS_LABEL = {
-  working: 'trabalhando…',
-  done: 'terminou',
+  working: 'rodando',
+  done: 'concluído',
   waiting: 'esperando você',
+  question: 'pergunta',
 };
 
-function applyMode() {
-  if (panelOpen) {
-    window.manager.setMode('panel');
-    tooltip.style.display = 'none';
-    panel.style.display = 'flex';
-  } else if (tooltip.style.display === 'block') {
-    window.manager.setMode('tooltip');
-    panel.style.display = 'none';
-  } else {
-    window.manager.setMode('bubble');
-    panel.style.display = 'none';
-  }
-}
+window.manager.onOverlayMode((mode) => {
+  panelOpen = mode === 'panel';
+  panel.style.display = panelOpen ? 'flex' : 'none';
+  tooltip.style.display = mode === 'tooltip' ? 'block' : 'none';
+  if (panelOpen) window.manager.panelOpened();
+});
 
 function hideTooltip() {
-  clearTimeout(tooltipTimer);
-  tooltipTimer = null;
-  tooltip.style.display = 'none';
-  applyMode();
+  window.manager.closeOverlay();
 }
 
 function openPanel() {
-  panelOpen = true;
-  clearTimeout(tooltipTimer);
-  tooltip.style.display = 'none';
-  applyMode();
-  window.manager.panelOpened();
+  window.manager.openPanel();
 }
 
 function closePanel() {
-  panelOpen = false;
-  applyMode();
+  window.manager.closeOverlay();
 }
 
 function togglePanel() {
-  if (panelOpen) closePanel();
-  else openPanel();
+  window.manager.togglePanel();
 }
 
 // Wayland: only the small no-drag core/badge receive DOM clicks.
@@ -72,6 +67,7 @@ badge.addEventListener('click', () => {
 });
 tooltip.addEventListener('click', openPanel);
 document.getElementById('close').addEventListener('click', closePanel);
+document.getElementById('quit').addEventListener('click', () => window.manager.quit());
 
 bubble.addEventListener('mousedown', (event) => {
   if (managed && event.button === 0) window.manager.dragStart();
@@ -85,10 +81,9 @@ window.manager.onEnv((env) => {
   document.body.classList.toggle('managed', managed);
 });
 
-window.manager.onClick(togglePanel);
-
-window.manager.onFlip((flipped) => {
-  document.body.classList.toggle('flip', flipped);
+// Both windows get the broadcast; only the bubble's click may toggle.
+window.manager.onClick(() => {
+  if (view === 'bubble') togglePanel();
 });
 
 // --- Notification chimes (synthesized: soft, short, no alarm vibes) ---
@@ -96,24 +91,8 @@ const muteButton = document.getElementById('mute');
 let muted = localStorage.getItem('muted') === '1';
 let audioContext = null;
 
-const SVG_ATTRS =
-  'width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
-const BELL_SVG = `<svg ${SVG_ATTRS}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>`;
-const BELL_OFF_SVG = `<svg ${SVG_ATTRS}><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
-const SEND_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`;
-
-const SPARK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1.5l1.9 7.1 7.1 1.9-7.1 1.9-1.9 7.1-1.9-7.1-7.1-1.9 7.1-1.9z"/></svg>`;
-const FOLDER_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>`;
-const HELP_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#d97757" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
-
-// Sets "<icon> <text>" on an element without letting the text act as HTML.
-function iconLabel(element, svgMarkup, text) {
-  element.innerHTML = svgMarkup;
-  element.append(document.createTextNode(` ${text}`));
-}
-
 function renderMuteButton() {
-  muteButton.innerHTML = muted ? BELL_OFF_SVG : BELL_SVG;
+  muteButton.textContent = muted ? '[mudo]' : '[som]';
 }
 renderMuteButton();
 
@@ -146,7 +125,7 @@ function renderChatEmptyState() {
   const empty = document.createElement('div');
   empty.id = 'chat-empty';
   empty.textContent =
-    'Pergunta qualquer coisa sobre teus chats: "resume o dia", "como tá o projeto-alpha?", "quem tá travado?"';
+    '# pergunta qualquer coisa sobre teus chats: "resume o dia", "como tá o projeto-alpha?", "quem tá travado?"';
   chatMessages.append(empty);
 }
 
@@ -155,13 +134,17 @@ function setChatOpen(open) {
   chatView.classList.toggle('hidden', !open);
   sessionsContainer.classList.toggle('hidden', open);
   settingsPop.classList.add('hidden');
+  if (!open) sessionsContainer.classList.remove('hidden');
   if (open) {
     renderChatEmptyState();
     chatInput.focus();
   }
 }
 
-chatToggle.addEventListener('click', () => setChatOpen(!chatOpen));
+chatToggle.addEventListener('click', () => {
+  setChatOpen(!chatOpen);
+  renderHeaderPath();
+});
 
 async function sendChatMessage() {
   const text = chatInput.value.trim();
@@ -176,7 +159,7 @@ async function sendChatMessage() {
     pendingBubble.classList.remove('pending');
     pendingBubble.textContent = reply || '…';
   } catch {
-    pendingBubble.textContent = 'Deu ruim aqui 😅 tenta de novo';
+    pendingBubble.textContent = '# deu ruim aqui — tenta de novo';
   } finally {
     chatSend.disabled = false;
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -259,7 +242,14 @@ const timbreSelect = document.getElementById('timbre');
 volumeInput.value = String(soundVolume);
 timbreSelect.value = soundTimbre;
 
-settingsButton.addEventListener('click', () => settingsPop.classList.toggle('hidden'));
+// One view at a time: the list, the config or the manager chat.
+settingsButton.addEventListener('click', () => {
+  const opening = settingsPop.classList.contains('hidden');
+  if (opening) setChatOpen(false);
+  settingsPop.classList.toggle('hidden', !opening);
+  sessionsContainer.classList.toggle('hidden', opening);
+  renderHeaderPath();
+});
 volumeInput.addEventListener('input', () => {
   soundVolume = Number(volumeInput.value);
   localStorage.setItem('soundVolume', String(soundVolume));
@@ -281,37 +271,122 @@ for (const slider of document.querySelectorAll('.type-row input[type="range"]'))
 }
 
 const ttsCheckbox = document.getElementById('tts');
+const ttsState = document.getElementById('tts-state');
 ttsCheckbox.checked = ttsEnabled;
+const renderTtsState = () => {
+  ttsState.textContent = ttsEnabled ? '[on]' : '[off]';
+};
+renderTtsState();
 ttsCheckbox.addEventListener('change', () => {
   ttsEnabled = ttsCheckbox.checked;
   localStorage.setItem('ttsEnabled', ttsEnabled ? '1' : '0');
+  renderTtsState();
   if (ttsEnabled) window.manager.speak('Notificação por voz ativada.');
 });
+
+document.getElementById('voice-test').addEventListener('click', () => {
+  window.manager.speak('Testando a voz do gerente.');
+});
+
+// Sliders paint their own fill and print the value beside them.
+function renderSlider(slider) {
+  const max = Number(slider.max) || 100;
+  const percent = Math.round((Number(slider.value) / max) * 100);
+  slider.style.setProperty('--pct', `${percent}%`);
+  const label = document.querySelector(`.slider-value[data-for="${slider.id}"]`);
+  if (label) label.textContent = `${slider.value}%`;
+}
+
+for (const slider of document.querySelectorAll('#settings-pop input[type="range"]')) {
+  renderSlider(slider);
+  slider.addEventListener('input', () => renderSlider(slider));
+}
+
+// Native selects are drawn by the OS: they ignore the theme and open over
+// the current value. These wrap them in a dropdown of our own — the select
+// stays in the DOM as the value holder, so reads and change events work.
+const dropdowns = [];
+
+function enhanceSelect(select) {
+  const wrapper = select.parentElement;
+  const trigger = document.createElement('button');
+  trigger.className = 'dd-trigger';
+  const menu = document.createElement('div');
+  menu.className = 'dd-menu hidden';
+  wrapper.append(trigger, menu);
+
+  const close = () => menu.classList.add('hidden');
+  const render = () => {
+    trigger.textContent = `[${select.selectedOptions[0]?.text ?? ''} ▾]`;
+    menu.replaceChildren(
+      ...[...select.options].map((option) => {
+        const item = document.createElement('button');
+        item.className = `dd-option${option.value === select.value ? ' selected' : ''}`;
+        item.textContent = option.text;
+        item.addEventListener('click', (event) => {
+          event.stopPropagation();
+          select.value = option.value;
+          select.dispatchEvent(new Event('change'));
+          render();
+          close();
+        });
+        return item;
+      }),
+    );
+  };
+
+  trigger.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const opening = menu.classList.contains('hidden');
+    for (const other of dropdowns) other.close();
+    if (!opening) return;
+    const box = trigger.getBoundingClientRect();
+    menu.style.left = `${box.left}px`;
+    menu.style.top = `${box.bottom + 4}px`;
+    menu.classList.remove('hidden');
+  });
+
+  dropdowns.push({ render, close });
+  render();
+}
+
+document.addEventListener('click', () => {
+  for (const dropdown of dropdowns) dropdown.close();
+});
+
+// The menu is positioned against the viewport, so scrolling would leave it
+// floating away from its trigger.
+document.getElementById('settings-pop').addEventListener('scroll', () => {
+  for (const dropdown of dropdowns) dropdown.close();
+});
+
+function refreshDropdowns() {
+  for (const dropdown of dropdowns) dropdown.render();
+}
 
 // --- manager config (terminal + daily token budget) ---
 const inboundSelect = document.getElementById('inbound');
 const inboundHint = document.getElementById('inbound-hint');
 
-// Each option carries its real consequence. "Aceitar direto" loosens a gate that
-// protects sessions running without permission prompts, and it does so for every
-// local process — not just this app — so the panel says that out loud.
 const INBOUND_HINTS = {
-  default: 'Entrega quando os modos de permissão casam; senão o chat pede sua confirmação.',
-  accept: '⚠ Entrega sem confirmação — vale pra qualquer processo local, não só pro gerente.',
-  hold: 'Toda mensagem espera você aprovar no chat.',
-  refuse: 'O chat não recebe nada do gerente.',
+  default: 'entrega quando os modos de permissão casam; senão o chat pede sua confirmação.',
+  accept: '⚠ entrega sem confirmação — vale pra qualquer processo local, não só pro gerente.',
+  hold: 'toda mensagem espera você aprovar no chat.',
+  refuse: 'o chat não recebe nada do gerente.',
 };
 
 function renderInboundHint(value) {
   const base = INBOUND_HINTS[value] ?? '';
   // The user level is all this app writes; a repo or managed setting can still
   // tighten it, and promising otherwise would be a lie.
-  inboundHint.textContent = `${base} Configurações do repositório ou da organização podem restringir por cima.`;
+  inboundHint.textContent = `# ${base} configurações do repositório ou da organização podem restringir por cima.`;
 }
 
 window.manager.getInboundPolicy().then((value) => {
   inboundSelect.value = value;
   renderInboundHint(value);
+  refreshDropdowns();
 });
 
 inboundSelect.addEventListener('change', async () => {
@@ -320,19 +395,47 @@ inboundSelect.addEventListener('change', async () => {
   // write must not leave the panel showing a value that is not on disk.
   inboundSelect.value = applied;
   renderInboundHint(applied);
+  refreshDropdowns();
+});
+
+const updateCheckButton = document.getElementById('update-check');
+const updateCheckFeedback = document.getElementById('update-check-feedback');
+
+updateCheckButton.addEventListener('click', async () => {
+  updateCheckButton.disabled = true;
+  updateCheckFeedback.textContent = '# buscando…';
+  try {
+    const status = await window.manager.checkUpdates();
+    if (status.ready) {
+      updateCheckFeedback.textContent = `# v${status.ready} baixada — clica no banner pra reiniciar`;
+    } else if (status.available) {
+      updateCheckFeedback.textContent = `# v${status.available} disponível — clica no banner acima`;
+    } else if (status.mode === 'off') {
+      updateCheckFeedback.textContent = '# modo dev — atualização desligada';
+    } else {
+      updateCheckFeedback.textContent = `# você já está na mais recente (v${status.currentVersion}) ✓`;
+    }
+  } catch {
+    updateCheckFeedback.textContent = '# não consegui checar agora';
+  } finally {
+    updateCheckButton.disabled = false;
+  }
 });
 
 const terminalSelect = document.getElementById('terminal');
 const voiceSelect = document.getElementById('voice');
+for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
 const usageLine = document.getElementById('usage-line');
 
 const formatTokens = (value) =>
-  value >= 1000 ? `${(value / 1000).toFixed(value % 1000 ? 1 : 0)}k` : String(value);
+  value >= 1000
+    ? `${(value / 1000).toFixed(value % 1000 ? 1 : 0).replace('.', ',')}k`
+    : String(value);
 
 function renderBudgetLabel(value) {
-  budgetLabel.textContent = value <= 0 ? 'economia total' : formatTokens(value);
+  budgetLabel.textContent = value <= 0 ? '0' : formatTokens(value);
 }
 
 window.manager.getConfig().then((config) => {
@@ -348,6 +451,7 @@ window.manager.getConfig().then((config) => {
     );
   }
   voiceSelect.value = config.voice;
+  refreshDropdowns();
   budgetInput.value = String(config.tokenBudgetDaily);
   renderBudgetLabel(config.tokenBudgetDaily);
 });
@@ -365,21 +469,21 @@ budgetInput.addEventListener('change', () => {
   window.manager.setConfig({ tokenBudgetDaily: Number(budgetInput.value) });
 });
 
+const usageDetail = document.getElementById('usage-detail');
+const usageBarFill = document.querySelector('#usage-bar > div');
+
 function renderUsage(tokens) {
   if (!tokens) return;
-  usageLine.replaceChildren();
-  const text = document.createElement('span');
-  text.textContent =
+  const used = formatTokens(tokens.usedToday);
+  const budget = formatTokens(tokens.budget);
+  usageLine.textContent =
+    tokens.budget <= 0 ? 'ia desligada' : `tokens ${used}/${budget}${tokens.economy ? ' · eco' : ''}`;
+  usageDetail.textContent =
     tokens.budget <= 0
-      ? 'IA desligada por escolha sua — só frases prontas.'
-      : `hoje: ${formatTokens(tokens.usedToday)} / ${formatTokens(tokens.budget)} tokens`;
-  usageLine.append(text);
-  if (tokens.economy) {
-    const badge = document.createElement('span');
-    badge.className = 'eco-badge';
-    badge.textContent = 'ECO';
-    usageLine.append(badge);
-  }
+      ? '# ia desligada por escolha sua — só frases prontas'
+      : `hoje: ${used} / ${budget}`;
+  const percent = tokens.budget > 0 ? Math.min(100, (tokens.usedToday / tokens.budget) * 100) : 0;
+  usageBarFill.style.width = `${percent}%`;
 }
 
 function playNote(frequency, startOffset, peakGain) {
@@ -417,7 +521,9 @@ window.manager.onBlur(() => {
   if (panelOpen) closePanel();
 });
 
-window.manager.onChime(({ kind }) => chime(kind));
+window.manager.onChime(({ kind }) => {
+  if (view === 'bubble') chime(kind);
+});
 
 // Spoken notifications stay short and instantly understandable — the full
 // message lives in the tooltip/panel.
@@ -427,19 +533,35 @@ const TTS_PHRASES = {
   waiting: (projectName) => `O chat ${projectName} espera você.`,
 };
 
+const toastMark = document.getElementById('toast-mark');
+const toastOrigin = document.getElementById('toast-origin');
+const TOAST_TITLE = {
+  done: 'término de task',
+  question: 'pergunta pendente',
+  waiting: 'esperando você',
+  start: 'início de task',
+};
+
+document.getElementById('toast-open').addEventListener('click', openPanel);
+document.getElementById('toast-close').addEventListener('click', (event) => {
+  event.stopPropagation();
+  hideTooltip();
+});
+
 window.manager.onTooltip(({ projectName, text, kind }) => {
-  chime(kind);
-  if (ttsEnabled && !muted) {
-    const phrase = TTS_PHRASES[kind] ?? TTS_PHRASES.waiting;
-    window.manager.speak(phrase(projectName));
+  if (view === 'bubble') {
+    chime(kind);
+    if (ttsEnabled && !muted) {
+      const phrase = TTS_PHRASES[kind] ?? TTS_PHRASES.waiting;
+      window.manager.speak(phrase(projectName));
+    }
   }
-  if (panelOpen) return;
-  iconLabel(tooltipProject, SPARK_SVG, projectName);
+  const alert = kind === 'question' || kind === 'waiting';
+  toastMark.textContent = alert ? '●' : '✓';
+  toastMark.classList.toggle('warn', alert);
+  tooltipProject.textContent = TOAST_TITLE[kind] ?? TOAST_TITLE.done;
+  toastOrigin.textContent = `${projectName} · agora`;
   tooltipText.textContent = text;
-  tooltip.style.display = 'block';
-  applyMode();
-  clearTimeout(tooltipTimer);
-  tooltipTimer = setTimeout(hideTooltip, TOOLTIP_HIDE_MS);
 });
 
 function relativeTime(timestamp) {
@@ -459,23 +581,19 @@ function replyElement(session) {
   const container = document.createElement('div');
   container.className = 'reply';
   const input = document.createElement('input');
-  input.placeholder = 'Resposta rápida…';
+  input.placeholder = 'resposta rápida…';
   input.value = replyDrafts.get(session.id) ?? '';
   const sendButton = document.createElement('button');
-  sendButton.innerHTML = SEND_SVG;
-  sendButton.title = 'Enviar pro chat';
+  sendButton.textContent = '[enviar]';
+  sendButton.title = 'Enviar pro chat no terminal';
   const feedback = document.createElement('div');
   feedback.className = 'reply-feedback';
   feedback.textContent = replyFeedback.get(session.id) ?? '';
 
   const FEEDBACK_TEXT = {
-    sent: 'Enviado pro chat',
-    typed: 'Digitado no terminal ✓',
-    clipboard: 'Copiado! Cola no chat com Ctrl+V',
-    failed: 'Não consegui enviar 😅 tenta de novo',
-    'terminal-not-in-x': 'Não achei o terminal. Ele roda em Wayland — abre com GDK_BACKEND=x11',
-    'no-x-windows': 'Sem acesso às janelas: instala o xdotool (sudo dnf install xdotool)',
-    'xdotool-failed': 'O xdotool falhou 😅 olha o log em ~/.config/claude-manager/log',
+    typed: '✓ enviado pro chat',
+    clipboard: '# copiado! cola no chat',
+    failed: '# não consegui enviar — tenta de novo',
   };
 
   async function send() {
@@ -486,7 +604,7 @@ function replyElement(session) {
     sendButton.disabled = false;
     replyFeedback.set(session.id, FEEDBACK_TEXT[mode] ?? '');
     feedback.textContent = replyFeedback.get(session.id);
-    if (mode === 'sent' || mode === 'typed') {
+    if (mode === 'typed') {
       replyDrafts.delete(session.id);
       input.value = '';
     }
@@ -531,28 +649,37 @@ function finishCard(card, session) {
 }
 
 function sessionElement(session) {
+  const state = session.question ? 'question' : session.status;
   const card = document.createElement('div');
-  card.className = `session${session.unread ? ' unread' : ''}`;
-  card.title = 'Abrir no Warp';
+  card.className = `session ${state}${session.unread ? ' unread' : ''}`;
+  card.title = 'Abrir no terminal';
   card.addEventListener('click', () => window.manager.focusSession(session.id));
 
   const top = document.createElement('div');
   top.className = 'session-top';
   const dot = document.createElement('span');
-  dot.className = `dot ${session.status}`;
+  dot.className = `dot ${state}`;
   const name = document.createElement('span');
   name.className = 'name';
   // "Tema" do chat: título gerado pela IA > primeiro prompt > pasta.
   name.textContent = session.title ?? session.promptPreview ?? session.projectName;
   const time = document.createElement('span');
   time.className = 'time';
-  time.textContent = `${STATUS_LABEL[session.status] ?? session.status} · ${relativeTime(session.updatedAt)}`;
-  top.append(dot, name, time);
+  time.textContent = `${STATUS_LABEL[state] ?? state} ${relativeTime(session.updatedAt)}`;
+  const close = document.createElement('button');
+  close.className = 'session-close';
+  close.textContent = '✕';
+  close.title = 'Fechar este chat';
+  close.addEventListener('click', (event) => {
+    event.stopPropagation();
+    window.manager.removeSession(session.id);
+  });
+  top.append(dot, name, time, close);
   card.append(top);
 
   const project = document.createElement('div');
   project.className = 'title';
-  iconLabel(project, FOLDER_SVG, session.projectName);
+  project.textContent = `└ ${session.projectName}`;
   card.append(project);
 
   // One message balloon per chat — the exact text that went out in the
@@ -564,18 +691,9 @@ function sessionElement(session) {
     const balloon = document.createElement('div');
     balloon.className = 'message';
 
-    const dismiss = document.createElement('button');
-    dismiss.className = 'message-dismiss';
-    dismiss.title = 'Dispensar mensagem';
-    dismiss.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
-    dismiss.addEventListener('click', (event) => {
-      event.stopPropagation();
-      window.manager.dismissMessage(session.id);
-    });
-    balloon.append(dismiss);
     const text = document.createElement('div');
     if (session.question?.questions?.length) {
-      iconLabel(text, HELP_SVG, messageText);
+      text.textContent = messageText;
       text.className = 'question-text';
     } else {
       text.textContent = messageText;
@@ -602,13 +720,10 @@ function sessionElement(session) {
             chip.disabled = false;
             if (result !== 'answered') {
               const ANSWER_FEEDBACK = {
-                'not-found': 'Não achei a aba do chat — responde por lá',
-                'needs-terminal': 'Abri o terminal pra você — escolhe a opção por lá',
+                'not-found': '# não achei a aba do chat — responde por lá',
+                'needs-terminal': '# abri o terminal pra você — escolhe a opção por lá',
               };
-              replyFeedback.set(
-                session.id,
-                ANSWER_FEEDBACK[result] ?? 'Não consegui responder 😅 tenta por lá',
-              );
+              replyFeedback.set(session.id, ANSWER_FEEDBACK[result] ?? '# não consegui responder');
               const feedbackElement = card.querySelector('.reply-feedback');
               if (feedbackElement) feedbackElement.textContent = replyFeedback.get(session.id);
             }
@@ -636,6 +751,15 @@ function sessionElement(session) {
 
 let lastUnreadCount = 0;
 
+// The bubble mirrors the sessions as a whole: someone waiting wins over
+// someone working, and an idle bubble carries no badge at all.
+function renderBadge(sessions) {
+  const waiting = sessions.some((s) => s.question || s.status === 'waiting');
+  const working = sessions.some((s) => s.status === 'working');
+  badge.className = waiting ? 'waiting' : working ? 'working' : '';
+  badge.style.display = waiting || working ? 'block' : 'none';
+}
+
 const updateBanner = document.getElementById('update-banner');
 updateBanner.addEventListener('click', () => window.manager.applyUpdate());
 
@@ -645,58 +769,42 @@ function renderUpdateBanner(update) {
     return;
   }
   updateBanner.classList.remove('hidden');
-  if (update.installing) {
-    updateBanner.textContent = `⏳ instalando v${update.available}… (confirma a senha se o sistema pedir)`;
-  } else if (update.ready) {
-    updateBanner.textContent = `🚀 v${update.ready} pronta — reiniciar agora`;
+  if (update.ready) {
+    updateBanner.textContent = `⇡ v${update.ready} pronta — [reiniciar agora]`;
   } else if (update.mode === 'auto') {
-    updateBanner.textContent = `⬇️ baixando v${update.available}…`;
+    updateBanner.textContent = `⇣ baixando v${update.available}…`;
   } else {
-    updateBanner.textContent = `🚀 v${update.available} disponível — instalar`;
+    updateBanner.textContent = `⇡ v${update.available} disponível — [baixar]`;
   }
 }
 
-const updateCheckButton = document.getElementById('update-check');
-const updateCheckFeedback = document.getElementById('update-check-feedback');
+const voiceStatusLine = document.getElementById('voice-status');
 
-updateCheckButton.addEventListener('click', async () => {
-  updateCheckButton.disabled = true;
-  updateCheckFeedback.textContent = 'buscando…';
-  try {
-    const status = await window.manager.checkUpdates();
-    if (status.ready) {
-      updateCheckFeedback.textContent = `v${status.ready} baixada — clica no banner pra reiniciar`;
-    } else if (status.available) {
-      updateCheckFeedback.textContent = `v${status.available} disponível — clica no banner acima`;
-    } else if (status.mode === 'off') {
-      updateCheckFeedback.textContent = 'modo dev — atualização desligada';
-    } else {
-      updateCheckFeedback.textContent = `você já está na mais recente (v${status.currentVersion}) ✓`;
-    }
-  } catch {
-    updateCheckFeedback.textContent = 'não consegui checar agora 😅';
-  } finally {
-    updateCheckButton.disabled = false;
-  }
-});
+function renderVoiceStatus(voice) {
+  voiceStatusLine.classList.toggle('hidden', !voice);
+  if (!voice) return;
+  voiceStatusLine.replaceChildren();
+  const arrow = document.createElement('span');
+  arrow.className = 'arrow';
+  arrow.textContent = '⇣';
+  voiceStatusLine.append(arrow);
+  voiceStatusLine.append(
+    document.createTextNode(` baixando ${voice}… falo com a voz do sistema até terminar`),
+  );
+}
 
 window.manager.onState((state) => {
   renderUpdateBanner(state.update);
+  renderVoiceStatus(state.voiceDownloading);
   renderUsage(state.tokens);
-  badge.textContent = state.unread > 99 ? '99+' : String(state.unread);
-  badge.style.display = state.unread > 0 ? 'flex' : 'none';
-  if (state.unread > lastUnreadCount) {
-    badge.classList.remove('pop');
-    void badge.offsetWidth; // restart the animation
-    badge.classList.add('pop');
-  }
+  renderBadge(state.sessions);
   lastUnreadCount = state.unread;
 
   sessionsContainer.replaceChildren();
   if (!state.sessions.length) {
     const empty = document.createElement('div');
     empty.id = 'empty';
-    empty.textContent = 'Nenhuma sessão por enquanto. Manda o Claude trabalhar que eu te aviso!';
+    empty.textContent = '# nenhuma sessão por enquanto — manda o claude trabalhar que eu te aviso';
     sessionsContainer.append(empty);
     return;
   }

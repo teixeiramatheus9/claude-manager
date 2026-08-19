@@ -32,11 +32,16 @@ import { sendUserMessage } from './cc-peer.js';
 // The app asks for XWayland via --ozone-platform=x11 (see package.json). The
 // switch has to come from the command line: appendSwitch() from this file runs
 // too late, because Chromium picks the platform before main.js executes.
-const displayMode = resolveDisplayMode({
-  display: process.env.DISPLAY,
-  ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
-  sessionType: process.env.XDG_SESSION_TYPE,
-});
+// macOS has neither DISPLAY nor a session type to read: Quartz always lets the
+// app place its own windows, and input goes through System Events.
+const displayMode =
+  process.platform === 'darwin'
+    ? { platform: 'darwin', managed: true, canInjectInput: true }
+    : resolveDisplayMode({
+        display: process.env.DISPLAY,
+        ozonePlatform: app.commandLine.getSwitchValue('ozone-platform'),
+        sessionType: process.env.XDG_SESSION_TYPE,
+      });
 const canPositionWindows = displayMode.managed;
 
 // The AppImage launcher drops build.linux.executableArgs, so a packaged run can
@@ -71,11 +76,12 @@ const preloadPath = path.join(rendererDir, 'preload.cjs');
 const iconPath = path.join(currentDir, '..', '..', 'assets', 'icon.png');
 
 const MODE_SIZES = {
-  bubble: { width: 80, height: 80 },
-  tooltip: { width: 368, height: 116 },
-  panel: { width: 380, height: 526 },
+  bubble: { width: 56, height: 56 },
+  tooltip: { width: 404, height: 100 },
+  panel: { width: 436, height: 552 },
 };
 const BUBBLE_BOX = MODE_SIZES.bubble.width;
+const TOOLTIP_HIDE_MS = 8000;
 const CLICK_THRESHOLD_PX = 6;
 const PRUNE_INTERVAL_MS = 10 * 60 * 1000;
 // Short, because a closed terminal should leave the list right away rather
@@ -87,15 +93,15 @@ let managerConfig = loadConfig(configFile);
 const tokenBudget = new TokenBudget({ file: usageFile });
 const isEconomyMode = () => tokenBudget.isExceeded(managerConfig.tokenBudgetDaily);
 let mainWindow = null;
-let currentMode = 'bubble';
-// Top-left corner of the bubble on screen — the fixed point every mode
-// expansion is anchored to (only meaningful in managed/X11 mode).
+let overlayWindow = null;
+// Top-left corner of the bubble on screen — where the overlay is anchored.
 let bubbleAnchor = null;
-let flipped = false;
 let dragState = null;
 
 function sendToRenderer(channel, payload) {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  for (const win of [mainWindow, overlayWindow]) {
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  }
 }
 
 let updateStatus = { mode: 'off', available: null, ready: null };
@@ -107,6 +113,7 @@ function sendState() {
     sessions: registry.list(),
     unread: registry.unreadCount(),
     update: updateStatus,
+    voiceDownloading: tts.downloadingVoice(),
     tokens: {
       usedToday: tokenBudget.usedToday(),
       budget: managerConfig.tokenBudgetDaily,
@@ -147,71 +154,144 @@ function persistAnchor() {
   }
 }
 
-function applyModeBounds(mode) {
+// The bubble lives in its own window that is never resized or moved on its
+// own: resizing a transparent window on macOS repaints the old frame into the
+// new geometry, which shows up as a ghost of the bubble. The panel and the
+// toast live in a second window that is always positioned while hidden.
+const OVERLAY_GAP = 8;
+
+function overlayBounds(mode) {
   const size = MODE_SIZES[mode];
-  mainWindow.setMinimumSize(size.width, size.height);
-  mainWindow.setMaximumSize(size.width, size.height);
-
-  if (!canPositionWindows || !bubbleAnchor) {
-    mainWindow.setSize(size.width, size.height);
-    return;
-  }
-
-  const workArea = screen.getDisplayNearestPoint(bubbleAnchor).workArea;
-  const overflowsRight = bubbleAnchor.x + size.width > workArea.x + workArea.width;
-  flipped = mode !== 'bubble' && overflowsRight;
-  let x = flipped ? bubbleAnchor.x + BUBBLE_BOX - size.width : bubbleAnchor.x;
-  x = Math.max(workArea.x, x);
-  let y = bubbleAnchor.y;
+  const anchor = bubbleAnchor ?? { x: 0, y: 0 };
+  const workArea = screen.getDisplayNearestPoint(anchor).workArea;
+  let x = anchor.x + BUBBLE_BOX + OVERLAY_GAP;
+  if (x + size.width > workArea.x + workArea.width) x = anchor.x - OVERLAY_GAP - size.width;
+  x = Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - size.width));
+  let y = anchor.y;
   if (y + size.height > workArea.y + workArea.height) {
     y = workArea.y + workArea.height - size.height;
   }
   y = Math.max(workArea.y, y);
-  mainWindow.setBounds({ x, y, width: size.width, height: size.height });
-  sendToRenderer('ui:flip', flipped);
+  return { x, y, width: size.width, height: size.height };
 }
 
-function createMainWindow() {
-  const options = {
-    width: MODE_SIZES.bubble.width,
-    height: MODE_SIZES.bubble.height,
-    icon: iconPath,
-    frame: false,
-    transparent: true,
-    // resizable stays true because resizable:false breaks -webkit-app-region
-    // drag on Linux; the size is pinned via min/max in applyModeBounds.
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    hasShadow: false,
-    webPreferences: { preload: preloadPath, contextIsolation: true },
+let overlayMode = null;
+let tooltipTimer = null;
+// Clicking the bubble blurs the panel, which already closes it — without
+// this the click that follows would just open it right back up.
+let closedByBlurAt = 0;
+let openedAt = 0;
+const JUST_CLOSED_MS = 150;
+// Clicking the bubble hands focus back to its window right after the panel
+// opens; without this settle window the panel would blur itself shut.
+const SETTLE_MS = 500;
+
+function showOverlay(mode, { focus = false } = {}) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  overlayMode = mode;
+  overlayWindow.setBounds(overlayBounds(mode));
+  overlayWindow.webContents.send('overlay:mode', mode);
+  if (focus) overlayWindow.show();
+  else overlayWindow.showInactive();
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+
+}
+
+function hideOverlay() {
+  clearTimeout(tooltipTimer);
+  overlayMode = null;
+  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+}
+
+function openPanel() {
+  clearTimeout(tooltipTimer);
+  registry.markAllRead();
+  openedAt = Date.now();
+  showOverlay('panel', { focus: true });
+}
+
+function showTooltip() {
+  if (overlayMode === 'panel') return;
+  showOverlay('tooltip');
+  clearTimeout(tooltipTimer);
+  tooltipTimer = setTimeout(hideOverlay, TOOLTIP_HIDE_MS);
+}
+
+ipcMain.on('overlay:toggle-panel', () => {
+  if (overlayMode === 'panel') return hideOverlay();
+  if (Date.now() - closedByBlurAt < JUST_CLOSED_MS) return;
+  openPanel();
+});
+ipcMain.on('overlay:open-panel', () => openPanel());
+ipcMain.on('overlay:close', () => hideOverlay());
+
+ipcMain.on('app:quit', () => app.quit());
+
+const windowOptions = {
+  icon: iconPath,
+  frame: false,
+  transparent: true,
+  // resizable stays true because resizable:false breaks -webkit-app-region
+  // drag on Linux.
+  resizable: true,
+  alwaysOnTop: true,
+  skipTaskbar: true,
+  hasShadow: false,
+  webPreferences: { preload: preloadPath, contextIsolation: true },
+};
+
+// visibleOnFullScreen turns the app into an accessory on macOS (no dock
+// icon), which is why the panel carries its own quit action.
+function stayOnTop(win) {
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+}
+
+function createWindows() {
+  const saved = loadPersistedState().bubble;
+  const workArea = screen.getPrimaryDisplay().workArea;
+  bubbleAnchor = {
+    x: saved?.x ?? workArea.x + workArea.width - BUBBLE_BOX - 24,
+    y: saved?.y ?? workArea.y + Math.round(workArea.height * 0.45),
   };
 
-  if (canPositionWindows) {
-    const saved = loadPersistedState().bubble;
-    const workArea = screen.getPrimaryDisplay().workArea;
-    bubbleAnchor = {
-      x: saved?.x ?? workArea.x + workArea.width - BUBBLE_BOX - 24,
-      y: saved?.y ?? workArea.y + Math.round(workArea.height * 0.45),
-    };
-    options.x = bubbleAnchor.x;
-    options.y = bubbleAnchor.y;
-  }
-
-  mainWindow = new BrowserWindow(options);
-  applyModeBounds('bubble');
-  mainWindow.setAlwaysOnTop(true, 'screen-saver');
-  // visibleOnFullScreen forces accessory mode on macOS, which hides the
-  // dock icon — there the dock wins over overlaying fullscreen apps.
-  mainWindow.setVisibleOnAllWorkspaces(true, {
-    visibleOnFullScreen: process.platform !== 'darwin',
+  mainWindow = new BrowserWindow({
+    ...windowOptions,
+    width: BUBBLE_BOX,
+    height: BUBBLE_BOX,
+    ...(canPositionWindows ? { x: bubbleAnchor.x, y: bubbleAnchor.y } : {}),
   });
-  mainWindow.loadFile(path.join(rendererDir, 'app.html'));
+  mainWindow.setMinimumSize(BUBBLE_BOX, BUBBLE_BOX);
+  mainWindow.setMaximumSize(BUBBLE_BOX, BUBBLE_BOX);
+  stayOnTop(mainWindow);
+  mainWindow.loadFile(path.join(rendererDir, 'app.html'), { query: { view: 'bubble' } });
   mainWindow.webContents.on('did-finish-load', () => {
     sendToRenderer('ui:env', { managed: canPositionWindows });
     sendState();
   });
-  mainWindow.on('blur', () => sendToRenderer('ui:blur'));
+
+  overlayWindow = new BrowserWindow({
+    ...windowOptions,
+    width: MODE_SIZES.panel.width,
+    height: MODE_SIZES.panel.height,
+    show: false,
+  });
+  stayOnTop(overlayWindow);
+  overlayWindow.loadFile(path.join(rendererDir, 'app.html'), { query: { view: 'overlay' } });
+  overlayWindow.webContents.on('did-finish-load', sendState);
+  // Focus bounces back to the bubble window right after a click, so a bare
+  // blur is not enough: the panel only closes when no window of ours is
+  // focused any more — that is, when the click really landed outside.
+  overlayWindow.on('blur', () => {
+    if (overlayMode !== 'panel' || Date.now() - openedAt < SETTLE_MS) return;
+    setTimeout(() => {
+      if (overlayMode !== 'panel') return;
+      const ours = [mainWindow, overlayWindow].some((win) => win && !win.isDestroyed() && win.isFocused());
+      if (ours) return;
+      hideOverlay();
+      closedByBlurAt = Date.now();
+    }, 120);
+  });
 }
 
 async function generateVoiceForStop(session) {
@@ -233,6 +313,7 @@ async function generateVoiceForStop(session) {
   }
   registry.setManagerMessage(session.id, voice);
   sendToRenderer('tooltip', { projectName: session.projectName, text: voice.message, kind: 'done' });
+  showTooltip();
 }
 
 async function enrichNotification(session) {
@@ -250,6 +331,7 @@ async function enrichNotification(session) {
     text,
     kind: firstQuestion ? 'question' : 'waiting',
   });
+  showTooltip();
 }
 
 function onHookEvent(event) {
@@ -267,15 +349,9 @@ function onHookEvent(event) {
   }
 }
 
-ipcMain.on('ui:mode', (_event, mode) => {
-  if (!MODE_SIZES[mode] || !mainWindow || mainWindow.isDestroyed()) return;
-  currentMode = mode;
-  applyModeBounds(mode);
-});
-
 ipcMain.on('panel:opened', () => registry.markAllRead());
 
-ipcMain.on('message:dismiss', (_event, sessionId) => registry.dismissMessage(sessionId));
+ipcMain.on('session:remove', (_event, sessionId) => registry.remove(sessionId));
 
 ipcMain.on('update:apply', () => updaterHandle.apply());
 
@@ -478,12 +554,18 @@ ipcMain.on('drag:end', () => {
     return;
   }
   const [x, y] = mainWindow.getPosition();
-  const width = mainWindow.getBounds().width;
+  const center = { x: x + BUBBLE_BOX / 2, y: y + BUBBLE_BOX / 2 };
+  const workArea = screen.getDisplayNearestPoint(center).workArea;
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
   bubbleAnchor = {
-    x: flipped && currentMode !== 'bubble' ? x + width - BUBBLE_BOX : x,
-    y,
+    x: clamp(x, workArea.x, workArea.x + workArea.width - BUBBLE_BOX),
+    y: clamp(y, workArea.y, workArea.y + workArea.height - BUBBLE_BOX),
   };
+  mainWindow.setPosition(bubbleAnchor.x, bubbleAnchor.y);
   persistAnchor();
+  // Moving across displays can drop the window behind others.
+  stayOnTop(mainWindow);
+  if (overlayMode) showOverlay(overlayMode, { focus: overlayMode === 'panel' });
 });
 
 // Self-registers the Claude Code hooks on startup, so packaged installs
@@ -585,10 +667,11 @@ app.whenReady().then(() => {
       `canInjectInput=${displayMode.canInjectInput}`,
     ),
   );
+  tts.watchDownloads(() => sendState());
   ensureHooksInstalled();
   hydrateRegistry();
   reapDeadSessions();
-  createMainWindow();
+  createWindows();
   startSocketServer(socketPath, onHookEvent, log);
   registry.on('change', sendState);
   registry.on('change', scheduleSessionsSave);

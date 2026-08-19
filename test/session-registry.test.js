@@ -111,17 +111,6 @@ describe('SessionRegistry', () => {
     expect(session.unread).toBe(false);
   });
 
-  it('dismissMessage clears message, question and unread', () => {
-    const registry = new SessionRegistry();
-    registry.applyEvent(promptEvent({ hook_event_name: 'Notification', message: 'esperando' }));
-    registry.setQuestion('s1', { questions: [{ question: 'Qual?', options: ['a'] }] });
-    registry.dismissMessage('s1');
-    const [session] = registry.list();
-    expect(session.managerMessage).toBeNull();
-    expect(session.question).toBeNull();
-    expect(session.unread).toBe(false);
-  });
-
   it('serialize/hydrate round-trips sessions without emitting change', () => {
     const source = new SessionRegistry();
     source.applyEvent(promptEvent({ hook_event_name: 'Stop' }));
@@ -227,5 +216,36 @@ describe('reconciling against the live Claude Code sessions', () => {
     registry.reconcileLiveSessions(new Set());
 
     expect([...registry.sessions.keys()]).toEqual([]);
+  });
+});
+
+describe('remove', () => {
+  it('drops the session and reports the change', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent({ hook_event_name: 'Stop', session_id: 's1', cwd: '/tmp/a' });
+    registry.applyEvent({ hook_event_name: 'Stop', session_id: 's2', cwd: '/tmp/b' });
+    let changes = 0;
+    registry.on('change', () => (changes += 1));
+
+    registry.remove('s1');
+    expect(registry.list().map((session) => session.id)).toEqual(['s2']);
+    expect(changes).toBe(1);
+  });
+
+  it('stays quiet for an id that is not there', () => {
+    const registry = new SessionRegistry();
+    let changes = 0;
+    registry.on('change', () => (changes += 1));
+    registry.remove('nope');
+    expect(changes).toBe(0);
+  });
+
+  it('lets a new event bring the chat back', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent({ hook_event_name: 'Stop', session_id: 's1', cwd: '/tmp/a' });
+    registry.remove('s1');
+    registry.applyEvent({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/tmp/a' });
+    expect(registry.list()).toHaveLength(1);
+    expect(registry.sessions.get('s1').status).toBe('working');
   });
 });

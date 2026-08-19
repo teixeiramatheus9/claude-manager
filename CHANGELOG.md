@@ -14,6 +14,9 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 - Instalação das vozes neurais não depende mais do bzip2 do sistema — a descompressão agora é feita pelo próprio app (corrige voz robótica em máquinas sem bzip2)
 
 ### Feats
+- Redesign completo da interface na direção "terminal": grafite e azul-aço, tudo monoespaçado, status por glifos e ações em [colchetes] — bolinha, painel de sessões, chats, configurações e notificação
+- Cada chat na lista ganhou um ✕ pra fechar: some da lista na hora e não volta no restart — se o terminal voltar a ser usado, o chat reaparece como sessão nova
+- Bolinha em janela própria e painel em janela separada: a bolinha nunca mais é redimensionada, o que elimina o fantasma que aparecia ao abrir e fechar o painel nas bordas da tela
 - Seletor de voz do gerente: Santa ou Faber, nas configurações e nos dois sistemas — as duas vozes agora rodam no mesmo motor neural (sherpa-onnx), aposentando o Piper
 - Botão "Buscar versão mais recente" nas configurações; a atualização agora instala direto pelo app e relança na versão nova — deb/rpm via autenticação nativa do sistema, macOS trocando o app no /Applications automaticamente
 - Pipeline de release com um job por pacote (AppImage, deb, rpm, macOS), espelho apt confiável com retry/timeout, e publicação só quando TODOS os pacotes estão prontos
