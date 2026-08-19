@@ -267,3 +267,72 @@ describe('remove', () => {
     expect(registry.sessions.get('s1').status).toBe('working');
   });
 });
+
+describe('adopting sessions found in the live registry', () => {
+  const S1 = '4b706711-9840-4931-8b0f-d6d51518d6ba';
+  const S2 = '7d6b682c-5c11-4e0a-b3d2-9f0e1a7c4d55';
+  const found = (overrides = {}) => ({
+    sessionId: S1,
+    cwd: '/home/user/projects/projeto-alpha',
+    name: 'claude-manager-28',
+    status: 'busy',
+    transcriptPath: '/tmp/t.jsonl',
+    ...overrides,
+  });
+
+  it('adopts an unknown busy session as a working chat', () => {
+    const registry = new SessionRegistry();
+    expect(registry.adopt([found()])).toBe(1);
+    const session = registry.sessions.get(S1);
+    expect(session.status).toBe(STATUS.WORKING);
+    expect(session.projectName).toBe('projeto-alpha');
+    expect(session.transcriptPath).toBe('/tmp/t.jsonl');
+    expect(session.unread).toBe(false);
+  });
+
+  // An idle chat finished whatever it was doing long before the adoption; done
+  // without unread describes it without ringing any bell.
+  it('adopts an idle session as done and quiet', () => {
+    const registry = new SessionRegistry();
+    registry.adopt([found({ status: 'idle' })]);
+    const session = registry.sessions.get(S1);
+    expect(session.status).toBe(STATUS.DONE);
+    expect(session.unread).toBe(false);
+  });
+
+  // Adoption proves the registry lists this session, so a later reconcile is
+  // allowed to reap it when it disappears.
+  it('marks an adopted session as seen alive', () => {
+    const registry = new SessionRegistry();
+    registry.adopt([found()]);
+    registry.reconcileLiveSessions(new Set([S2]));
+    expect(registry.sessions.has(S1)).toBe(false);
+  });
+
+  it('never clobbers a chat the hooks already reported', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent({
+      hook_event_name: 'Stop',
+      session_id: S1,
+      cwd: '/home/user/projects/projeto-alpha',
+    });
+    expect(registry.adopt([found()])).toBe(0);
+    expect(registry.sessions.get(S1).status).toBe(STATUS.DONE);
+    expect(registry.sessions.get(S1).unread).toBe(true);
+  });
+
+  it('announces one change for the whole batch and none when empty-handed', () => {
+    const registry = new SessionRegistry();
+    const onChange = vi.fn();
+    registry.on('change', onChange);
+    expect(registry.adopt([found(), found({ sessionId: S2 })])).toBe(2);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(registry.adopt([found()])).toBe(0);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses ids Claude Code could never have issued', () => {
+    const registry = new SessionRegistry();
+    expect(registry.adopt([found({ sessionId: 'sim-projeto-teste' })])).toBe(0);
+  });
+});

@@ -121,6 +121,58 @@ export function readLiveSessionIds({
   return alive;
 }
 
+// Sessions the panel can adopt: live interactive CLI chats the hooks never
+// reported, either opened before the manager or closed from the panel.
+// Sub-agents and headless runs are not chats the user manages, so they stay
+// out. Returns null when there is no registry to read — "no opinion", same as
+// readLiveSessionIds.
+export function readAdoptableSessions({
+  dir = claudeSessionsDir,
+  readdirSync = fs.readdirSync,
+  readFileSync = fs.readFileSync,
+  procStartFor = defaultProcStartFor,
+  isAlive = defaultIsAlive,
+} = {}) {
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return null;
+  }
+
+  const sessions = [];
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue;
+    let raw;
+    try {
+      raw = JSON.parse(readFileSync(path.join(dir, entry), 'utf8'));
+    } catch {
+      continue;
+    }
+    const { pid, sessionId, cwd, kind, entrypoint } = raw ?? {};
+    if (!Number.isInteger(pid) || typeof sessionId !== 'string' || !sessionId) continue;
+    if (typeof cwd !== 'string' || !cwd) continue;
+    if (kind !== 'interactive' || entrypoint !== 'cli') continue;
+    if (!isAlive(pid)) continue;
+    const procStart = typeof raw.procStart === 'string' ? raw.procStart : null;
+    if (procStart && procStartFor(pid) !== procStart) continue;
+    sessions.push({
+      sessionId,
+      cwd,
+      name: typeof raw.name === 'string' ? raw.name : null,
+      status: typeof raw.status === 'string' ? raw.status : null,
+    });
+  }
+  return sessions;
+}
+
+// Claude Code keeps transcripts under ~/.claude/projects/<flattened cwd>,
+// where both slashes and dots collapse to dashes.
+export function claudeTranscriptPath(cwd, sessionId, { home = os.homedir() } = {}) {
+  const flattened = String(cwd).replace(/[/.]/g, '-');
+  return path.join(home, '.claude', 'projects', flattened, `${sessionId}.jsonl`);
+}
+
 // Resolves a hook-reported sessionId to everything needed to talk to that
 // session's socket, or null when there is no usable channel — in which case the
 // caller falls back to driving the terminal window.
