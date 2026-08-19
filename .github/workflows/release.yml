@@ -66,15 +66,38 @@ jobs:
           VERSION="$MAJOR.$MINOR.$PATCH"
           git tag -a "v$VERSION" -m "release v$VERSION"
           git push origin "v$VERSION"
+          # seed the draft release now, so the parallel build jobs all attach
+          # to the same one instead of racing to create it
+          gh release create "v$VERSION" --draft --title "Claude Manager v$VERSION" --notes "em preparação…"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "released version: v$VERSION (from $LATEST)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # One job per package so each target is individually trackable and a hang
+  # in one never blocks the others.
   build:
     needs: version
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - name: AppImage
+            os: ubuntu-latest
+            args: --linux AppImage
+          - name: deb
+            os: ubuntu-latest
+            args: --linux deb
+          - name: rpm
+            os: ubuntu-latest
+            args: --linux rpm
+            needs-rpm-tools: true
+          - name: macOS
+            os: macos-latest
+            args: --mac
+    name: build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # the mac build is intentionally unsigned
@@ -86,18 +109,29 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y rpm
+      # apt mirrors hang sometimes — cap the step and retry instead of wedging
+      - if: matrix.needs-rpm-tools == true
+        timeout-minutes: 6
+        run: |
+          for attempt in 1 2 3; do
+            if sudo apt-get update -o Acquire::Retries=3 && sudo apt-get install -y rpm; then
+              exit 0
+            fi
+            echo "apt attempt $attempt failed; retrying in 15s…"
+            sleep 15
+          done
+          exit 1
       - run: npm ci
       # stamp the tag's version into the build workspace (main stays untouched)
       - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
-      - if: runner.os == 'Linux'
-        run: npx electron-builder --linux --publish always
-      - if: runner.os == 'macOS'
-        run: npx electron-builder --mac --publish always
+      - run: npx electron-builder ${{ matrix.args }} --publish always
 
   publish:
     needs: [version, build]
+    # publish whatever succeeded — a single broken target must not hold the
+    # release hostage (its package ships in a job re-run, attached to the
+    # same release)
+    if: ${{ always() && needs.version.result == 'success' }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
