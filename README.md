@@ -102,6 +102,26 @@ Diferenças em relação ao Linux:
   primeira abertura use botão direito → Abrir (ou
   `xattr -dr com.apple.quarantine "/Applications/Claude Manager.app"`).
 
+## Windows
+
+Funciona nativo no Windows. Instale pelo `Claude Manager Setup <versão>.exe`
+das releases (o app se atualiza sozinho a partir daí) ou, no repo,
+`npm install && npm run hooks:install && npm run start:win`.
+Diferenças em relação ao Linux:
+
+- Os hooks falam com o app por um named pipe (`\\.\pipe\claude-manager-<user>`)
+  e se registram sozinhos na primeira execução via um shim `hook-emit.cmd` em
+  `~/.config/claude-manager/`.
+- Enquanto a voz neural baixa, fala com a voz do sistema (Microsoft Maria).
+- Foco de chat: acha a janela do terminal pelo título (Windows Terminal, Warp,
+  WaveTerm, Alacritty, WezTerm) e caça a aba com Ctrl+Tab; a resposta rápida
+  digita via SendKeys. Funciona melhor quando o título da aba carrega o nome
+  do projeto (no Warp o título já é o tema do chat).
+- `npm run autostart:install` registra o app em
+  `HKCU\...\CurrentVersion\Run` pra subir junto com o login.
+- O instalador não é assinado: no aviso do SmartScreen use
+  **Mais informações → Executar assim mesmo**.
+
 ## Sandbox do Electron no Ubuntu 24+
 
 O Ubuntu restringe user namespaces sem privilégio, então o Electron aborta com
