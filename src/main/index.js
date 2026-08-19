@@ -92,6 +92,9 @@ const rendererDir = path.join(currentDir, '..', 'renderer');
 const preloadPath = path.join(rendererDir, 'preload.cjs');
 const execFileAsync = promisify(execFile);
 const iconPath = path.join(currentDir, '..', '..', 'assets', 'icon.png');
+// A panel shows the icon small over its own background: the app tile would be
+// a dark smudge next to the other status icons, so the tray gets the glyph.
+const trayIconPath = path.join(currentDir, '..', '..', 'assets', 'tray-icon.png');
 
 const MODE_SIZES = {
   bubble: { width: 56, height: 56 },
@@ -295,6 +298,15 @@ function showBubble() {
 function refreshTrayMenu() {
   if (!tray) return;
   const actions = {
+    panel: () => {
+      showBubble();
+      openPanel();
+    },
+    settings: () => {
+      showBubble();
+      openPanel();
+      sendToRenderer('ui:open-settings');
+    },
     toggle: () => (bubbleVisible() ? hideToTray() : showBubble()),
     quit: () => app.quit(),
   };
@@ -329,9 +341,14 @@ async function setupTray() {
     sendState();
     return;
   }
-  tray = new Tray(iconPath);
+  tray = new Tray(trayIconPath);
   tray.setToolTip('Claude Manager');
-  tray.on('click', () => (bubbleVisible() ? hideToTray() : showBubble()));
+  // GNOME's appindicator has no activate signal — a left click just opens the
+  // menu — so the menu carries every action instead of relying on this.
+  tray.on('click', () => {
+    showBubble();
+    openPanel();
+  });
   refreshTrayMenu();
   sendState();
 }

@@ -2,19 +2,34 @@ import { describe, expect, it } from 'vitest';
 import { detectTrayHost, hasTrayHostIn, trayMenuTemplate } from '../src/main/tray.js';
 
 describe('trayMenuTemplate', () => {
+  const ids = (options) => trayMenuTemplate(options).filter((item) => item.id).map((item) => item.id);
+
+  it('opens the app and its settings straight from the tray', () => {
+    // the tray is the only handle when the bubble is parked, so it has to do
+    // more than toggle: reaching the panel or the settings took a bubble click
+    expect(ids({ bubbleVisible: false })).toContain('panel');
+    expect(ids({ bubbleVisible: false })).toContain('settings');
+  });
+
   it('offers to hide the bubble while it is on screen', () => {
-    const [toggle] = trayMenuTemplate({ bubbleVisible: true });
-    expect(toggle).toMatchObject({ id: 'toggle', label: 'Esconder a bolha' });
+    const toggle = trayMenuTemplate({ bubbleVisible: true }).find((item) => item.id === 'toggle');
+    expect(toggle.label).toBe('Esconder a bolha');
   });
 
   it('offers to bring the bubble back once it is hidden', () => {
-    const [toggle] = trayMenuTemplate({ bubbleVisible: false });
-    expect(toggle).toMatchObject({ id: 'toggle', label: 'Mostrar a bolha' });
+    const toggle = trayMenuTemplate({ bubbleVisible: false }).find((item) => item.id === 'toggle');
+    expect(toggle.label).toBe('Mostrar a bolha');
   });
 
-  it('always keeps a real way out', () => {
-    const quit = trayMenuTemplate({ bubbleVisible: true }).find((item) => item.id === 'quit');
-    expect(quit.label).toBe('Encerrar');
+  it('always keeps a real way out, and keeps it last', () => {
+    const items = trayMenuTemplate({ bubbleVisible: true }).filter((item) => item.id);
+    expect(items.at(-1)).toMatchObject({ id: 'quit', label: 'Encerrar' });
+  });
+
+  it('labels every item — an unlabelled entry renders blank in the menu', () => {
+    for (const item of trayMenuTemplate({ bubbleVisible: true })) {
+      if (item.id) expect(item.label).toBeTruthy();
+    }
   });
 });
 

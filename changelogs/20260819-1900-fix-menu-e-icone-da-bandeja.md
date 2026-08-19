@@ -1,0 +1,3 @@
+- Menu da bandeja passa a abrir o painel e ir direto pras configurações, além de mostrar/esconder a bolha e encerrar — antes ele só alternava a bolha, então chegar em qualquer lugar ainda exigia clicar nela
+- Ícone da bandeja agora é o glifo em fundo transparente, no tamanho que um painel espera; antes ia o ícone do app (tile escuro de 512px), que num painel vira uma mancha
+- O aviso de bandeja recém-instalada agora diz o que fazer (sair e entrar na sessão), em vez de só informar que vale no próximo login
