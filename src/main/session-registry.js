@@ -35,7 +35,9 @@ export class SessionRegistry extends EventEmitter {
       managerMessage: null,
       unread: false,
       updatedAt: 0,
+      wave: null,
     };
+    if (event.wave?.blockId) session.wave = event.wave;
     if (event.cwd) {
       session.cwd = event.cwd;
       session.projectName = path.basename(event.cwd);

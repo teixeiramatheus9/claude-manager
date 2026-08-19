@@ -1,11 +1,9 @@
 import { app, BrowserWindow, clipboard, ipcMain, screen } from 'electron';
-import { spawn as spawnProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureHooks } from '../../scripts/install-hooks.js';
-import { installPiper, isPiperInstalled, piperPaths } from './piper-installer.js';
 import { SessionRegistry } from './session-registry.js';
 import { startSocketServer } from './socket-server.js';
 import { readTranscriptSnapshot } from './transcript.js';
@@ -14,7 +12,7 @@ import { askManager, findMentionedSession } from './manager-chat.js';
 import { fallbackMessage } from './manager-voice.js';
 import { loadConfig, saveConfig } from './config-store.js';
 import { TokenBudget } from './token-budget.js';
-import { focusChatTab, sendReplyToWarp, answerQuestionInWarp } from './warp.js';
+import { terminal, tts } from './platform.js';
 import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir } from './paths.js';
 import { log } from './log.js';
 
@@ -144,7 +142,11 @@ function createMainWindow() {
   mainWindow = new BrowserWindow(options);
   applyModeBounds('bubble');
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // visibleOnFullScreen forces accessory mode on macOS, which hides the
+  // dock icon — there the dock wins over overlaying fullscreen apps.
+  mainWindow.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: process.platform !== 'darwin',
+  });
   mainWindow.loadFile(path.join(rendererDir, 'app.html'));
   mainWindow.webContents.on('did-finish-load', () => {
     sendToRenderer('ui:env', { managed: canPositionWindows });
@@ -216,78 +218,16 @@ ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('message:dismiss', (_event, sessionId) => registry.dismissMessage(sessionId));
 
-// Local TTS, offline and token-free. Prefers Piper (neural pt-BR voice);
-// falls back to spd-say (robotic) while Piper auto-downloads on first use.
-const piperDir = path.join(configDir, 'piper');
-const { binary: piperBinary, voice: piperVoice } = piperPaths(piperDir);
-const PIPER_SAMPLE_RATE = '22050';
-let piperDownloadStarted = false;
-
-function ensurePiperInBackground() {
-  if (piperDownloadStarted || isPiperInstalled(piperDir)) return;
-  piperDownloadStarted = true;
-  log('piper: downloading neural voice…');
-  installPiper(piperDir)
-    .then(() => {
-      log('piper: neural voice installed');
-      speakWithPiper('Voz neural instalada. Agora eu falo assim!');
-    })
-    .catch((error) => {
-      piperDownloadStarted = false; // allow a retry on the next speak
-      log(`piper install failed: ${error}`);
-    });
-}
-
-let speechProcesses = [];
-
-function stopSpeaking() {
-  for (const child of speechProcesses) {
-    try {
-      child.kill('SIGKILL');
-    } catch {
-      // already dead
-    }
-  }
-  speechProcesses = [];
-}
-
-function speakWithPiper(text) {
-  const piper = spawnProcess(piperBinary, ['--model', piperVoice, '--output-raw'], {
-    stdio: ['pipe', 'pipe', 'ignore'],
-  });
-  const player = spawnProcess(
-    'aplay',
-    ['-q', '-r', PIPER_SAMPLE_RATE, '-f', 'S16_LE', '-t', 'raw', '-c', '1', '-'],
-    { stdio: ['pipe', 'ignore', 'ignore'] },
-  );
-  speechProcesses = [piper, player];
-  piper.stdout.pipe(player.stdin);
-  piper.on('error', (error) => log(`piper failed: ${error}`));
-  player.on('error', (error) => log(`aplay failed: ${error}`));
-  piper.stdin.end(text);
-}
-
 ipcMain.on('tts:speak', (_event, rawText) => {
   const text = String(rawText ?? '').slice(0, 300);
   if (!text) return;
-  stopSpeaking();
+  tts.stopSpeaking();
   try {
-    if (isPiperInstalled(piperDir)) {
-      speakWithPiper(text);
-    } else {
-      spawnDetached('spd-say', ['-l', 'pt-BR', '--', text]);
-      ensurePiperInBackground();
-    }
+    tts.speak(text);
   } catch (error) {
     log(`tts failed: ${error}`);
   }
 });
-
-function spawnDetached(command, args) {
-  const child = spawnProcess(command, args, { detached: true, stdio: 'ignore' });
-  child.on('error', (error) => log(`${command} failed: ${error}`));
-  child.unref();
-}
 
 // --- manager chat (token-frugal: local digest, excerpt only on mention) ---
 const CHAT_HISTORY_LIMIT = 12;
@@ -318,7 +258,13 @@ ipcMain.handle('manager:chat', async (_event, rawMessage) => {
   return reply;
 });
 
-ipcMain.handle('config:get', () => managerConfig);
+ipcMain.handle('config:get', () => ({
+  ...managerConfig,
+  terminals: Object.entries(terminal.TERMINALS).map(([value, spec]) => ({
+    value,
+    label: spec.label,
+  })),
+}));
 
 ipcMain.handle('config:set', (_event, partial) => {
   const allowed = {};
@@ -352,8 +298,9 @@ function sessionSearchKeys(session) {
 }
 
 async function huntSessionTab(session) {
-  const result = await focusChatTab(sessionSearchKeys(session), {
+  const result = await terminal.focusChatTab(sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
+    wave: session?.wave,
   });
   if (session?.id) {
     if (result.tabFound && result.matchedTitle) {
@@ -374,8 +321,9 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const session = registry.sessions.get(sessionId);
   const index = Number(optionIndex);
   if (!session || !Number.isInteger(index) || index < 0) return 'failed';
-  const result = await answerQuestionInWarp(sessionSearchKeys(session), index, {
+  const result = await terminal.answerQuestionInWarp(sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
+    wave: session?.wave,
   });
   if (result === 'answered') registry.markAnswered(sessionId);
   return result;
@@ -385,9 +333,10 @@ ipcMain.handle('warp:reply', (_event, { sessionId, text }) => {
   const session = registry.sessions.get(sessionId);
   const reply = String(text ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
   if (!reply) return 'failed';
-  return sendReplyToWarp(sessionSearchKeys(session), reply, {
+  return terminal.sendReplyToWarp(sessionSearchKeys(session), reply, {
     writeClipboard: (value) => clipboard.writeText(value),
     terminal: managerConfig.terminal,
+    wave: session?.wave,
   });
 });
 
@@ -481,6 +430,10 @@ function scheduleSessionsSave() {
     }
   }, 500);
 }
+
+// A second instance would unlink and take over the unix socket, leaving the
+// first one running but unreachable by the hooks.
+if (!app.requestSingleInstanceLock()) app.exit(0);
 
 app.whenReady().then(() => {
   ensureHooksInstalled();

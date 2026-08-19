@@ -24,9 +24,13 @@ function fallbackNotify(event) {
       ? `A tarefa do '${projectName}' terminou.`
       : (event?.message ?? `O '${projectName}' está esperando você.`);
   try {
-    spawn('notify-send', ['Claude Manager', body], { detached: true, stdio: 'ignore' }).unref();
+    const [command, args] =
+      process.platform === 'darwin'
+        ? ['osascript', ['-e', `display notification ${JSON.stringify(body)} with title "Claude Manager"`]]
+        : ['notify-send', ['Claude Manager', body]];
+    spawn(command, args, { detached: true, stdio: 'ignore' }).unref();
   } catch {
-    // no notify-send, nothing else to do
+    // no notifier available, nothing else to do
   }
 }
 
@@ -42,6 +46,10 @@ process.stdin.on('end', () => {
     event = JSON.parse(raw);
   } catch {
     process.exit(0);
+  }
+  const { WAVETERM_BLOCKID, WAVETERM_TABID, WAVETERM_JWT } = process.env;
+  if (WAVETERM_BLOCKID && WAVETERM_TABID && WAVETERM_JWT) {
+    event.wave = { blockId: WAVETERM_BLOCKID, tabId: WAVETERM_TABID, jwt: WAVETERM_JWT };
   }
   const socket = net.connect(socketPath);
   socket.on('connect', () => socket.end(`${JSON.stringify(event)}\n`));
