@@ -6,6 +6,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// Named pipes are the win32 transport; a fresh name per test avoids collisions.
+function testSocketPath(dir, name) {
+  return process.platform === 'win32'
+    ? `\\\\.\\pipe\\cm-test-${name}-${process.pid}-${Math.random().toString(36).slice(2)}`
+    : path.join(dir, name);
+}
+
 const hookScript = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
@@ -29,7 +36,7 @@ function runHook(input, env = {}) {
 describe('hook-emit', () => {
   it('forwards the event to the socket and exits 0', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-hook-'));
-    const socketFile = path.join(dir, 'test.sock');
+    const socketFile = testSocketPath(dir, 'test.sock');
     const received = new Promise((resolve) => {
       const server = net.createServer((socket) => {
         let data = '';
@@ -52,7 +59,7 @@ describe('hook-emit', () => {
 
   it('attaches the waveterm target when running inside a wave block', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-hook-'));
-    const socketFile = path.join(dir, 'test.sock');
+    const socketFile = testSocketPath(dir, 'test.sock');
     const received = new Promise((resolve) => {
       const server = net.createServer((socket) => {
         let data = '';
@@ -102,6 +109,16 @@ describe('hook-emit', () => {
     const exitCode = await runHook('not json at all', {
       CLAUDE_MANAGER_SOCKET: '/nonexistent.sock',
     });
+    expect(exitCode).toBe(0);
+  });
+
+  it('exits 0 on a Stop event when the socket and the notifier are both missing', async () => {
+    // Stop triggers fallbackNotify; PATH is emptied so no notifier binary is
+    // found anywhere — before the fix this died on an unhandled 'error' event.
+    const exitCode = await runHook(
+      '{"hook_event_name":"Stop","session_id":"x","cwd":"/tmp/proj"}',
+      { CLAUDE_MANAGER_SOCKET: '/nonexistent/dir/absent.sock', PATH: '', Path: '' },
+    );
     expect(exitCode).toBe(0);
   });
 });
