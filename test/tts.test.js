@@ -12,6 +12,7 @@ import {
   VOICES,
   isVoiceInstalled,
   runtimeName,
+  tarBinary,
   voicePaths,
 } from '../src/main/sherpa-installer.js';
 
@@ -50,6 +51,14 @@ describe('runtime and voice resolution', () => {
     const faber = voicePaths('/cfg', 'faber', 'linux', 'x64');
     expect(faber.args.some((a) => a.startsWith('--vits-model='))).toBe(true);
     expect(faber.args.every((a) => !a.includes('kokoro'))).toBe(true);
+  });
+
+  it('pins the OS-bundled bsdtar on win32 and plain tar elsewhere', () => {
+    expect(tarBinary('linux', {}, () => true)).toBe('tar');
+    expect(tarBinary('win32', { SystemRoot: 'C:\\Windows' }, () => true)).toBe(
+      'C:\\Windows\\System32\\tar.exe',
+    );
+    expect(tarBinary('win32', { SystemRoot: 'C:\\Windows' }, () => false)).toBe('tar');
   });
 
   it('resolves a win32-x64 runtime with an .exe binary', () => {

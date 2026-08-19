@@ -82,12 +82,20 @@ async function download(url, destination, fetchFn) {
   fs.writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
 }
 
+// Git Bash puts MSYS GNU tar first on PATH, and that tar mangles Windows
+// `-C C:\...` paths; the OS-bundled bsdtar handles them, so win32 pins it.
+export function tarBinary(platform = process.platform, env = process.env, existsFn = fs.existsSync) {
+  if (platform !== 'win32') return 'tar';
+  const systemTar = path.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
+  return existsFn(systemTar) ? systemTar : 'tar';
+}
+
 // bzip2 is decompressed in pure JS and streamed into `tar -xf -`, so the
 // system needs no bzip2 binary (tar -xjf shells out to it and many machines
 // don't have it — that broke voice installs with "tar exited with 2").
 function extractTarBz2(archive, directory, spawnFn) {
   return new Promise((resolve, reject) => {
-    const tar = spawnFn('tar', ['-xf', '-', '-C', directory], {
+    const tar = spawnFn(tarBinary(), ['-xf', '-', '-C', directory], {
       stdio: ['pipe', 'ignore', 'ignore'],
     });
     tar.on('error', reject);
