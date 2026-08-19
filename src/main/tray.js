@@ -41,6 +41,12 @@ export function trayItemServiceName(pid) {
 // a failed probe costs one silent gdbus call, so patience is free.
 const REREGISTER_DELAYS_MS = [6000, 6000, 12000, 24000, 48000, 96000];
 
+// Registering wakes the item's own re-export, so reads can fail for a few
+// seconds right after it — long enough for the extension's reset to leave the
+// icon on screen but unwired (visible, no menu, dead clicks). So a register
+// only counts once the item still answers reads after that spell.
+const REGISTER_SETTLE_MS = 5000;
+
 export async function nudgeTrayRegistration({
   pid,
   execFn,
@@ -49,21 +55,23 @@ export async function nudgeTrayRegistration({
   log,
 }) {
   const service = trayItemServiceName(pid);
+  const probe = () =>
+    execFn('gdbus', [
+      'call',
+      '--session',
+      '--dest',
+      service,
+      '--object-path',
+      '/StatusNotifierItem',
+      '--method',
+      'org.freedesktop.DBus.Properties.Get',
+      'org.kde.StatusNotifierItem',
+      'Id',
+    ]);
   for (const delay of delays) {
     await waitFn(delay);
     try {
-      await execFn('gdbus', [
-        'call',
-        '--session',
-        '--dest',
-        service,
-        '--object-path',
-        '/StatusNotifierItem',
-        '--method',
-        'org.freedesktop.DBus.Properties.Get',
-        'org.kde.StatusNotifierItem',
-        'Id',
-      ]);
+      await probe();
     } catch (error) {
       log?.(`tray: item not answering reads yet, holding the nudge: ${error}`);
       continue;
@@ -80,9 +88,11 @@ export async function nudgeTrayRegistration({
         'org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem',
         service,
       ]);
+      await waitFn(REGISTER_SETTLE_MS);
+      await probe();
       return;
     } catch (error) {
-      log?.(`tray: re-register nudge failed: ${error}`);
+      log?.(`tray: re-register nudge did not stick, trying again: ${error}`);
     }
   }
 }

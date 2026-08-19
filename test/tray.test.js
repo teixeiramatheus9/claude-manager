@@ -100,13 +100,35 @@ describe('nudgeTrayRegistration', () => {
     const { calls, execFn, waitFn } = collect();
     await nudgeTrayRegistration({ pid: 4242, execFn, waitFn, delays: [5000, 15000, 30000] });
 
-    expect(calls.map((c) => c.kind)).toEqual(['wait', 'exec', 'exec']);
-    const [probe, register] = calls.filter((c) => c.kind === 'exec');
+    // wait, probe, register, then wait out the deaf spell and prove it stuck
+    expect(calls.map((c) => c.kind)).toEqual(['wait', 'exec', 'exec', 'wait', 'exec']);
+    const [probe, register, recheck] = calls.filter((c) => c.kind === 'exec');
     expect(probe.cmd).toBe('gdbus');
     expect(probe.args).toContain('org.freedesktop.StatusNotifierItem-4242-1');
     expect(probe.args).toContain('org.freedesktop.DBus.Properties.Get');
     expect(register.args).toContain('org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem');
     expect(register.args.at(-1)).toBe('org.freedesktop.StatusNotifierItem-4242-1');
+    expect(recheck.args).toContain('org.freedesktop.DBus.Properties.Get');
+  });
+
+  it('registers again when the register itself lands in a deaf spell', async () => {
+    // registering wakes the item's own re-export, so reads right after it can
+    // fail — an extension read in that window leaves the icon up but unwired
+    const calls = [];
+    let probes = 0;
+    const execFn = async (cmd, args) => {
+      calls.push(args);
+      if (args.includes('org.freedesktop.DBus.Properties.Get') && ++probes === 2)
+        throw new Error('error occurred in Get');
+    };
+    await nudgeTrayRegistration({ pid: 7, execFn, waitFn: async () => {}, delays: [1, 2] });
+
+    const registers = calls.filter((args) =>
+      args.includes('org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem'),
+    );
+    // probe ok, register, recheck fails -> second round: probe, register, recheck ok
+    expect(registers).toHaveLength(2);
+    expect(probes).toBe(4);
   });
 
   it('holds the re-register while the probe still fails, and retries later', async () => {
@@ -123,7 +145,7 @@ describe('nudgeTrayRegistration', () => {
       args.includes('org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem'),
     );
     expect(registers).toHaveLength(1);
-    expect(calls).toHaveLength(3); // failed probe, good probe, register
+    expect(calls).toHaveLength(4); // failed probe, good probe, register, recheck
   });
 
   it('gives up quietly when the item never answers', async () => {

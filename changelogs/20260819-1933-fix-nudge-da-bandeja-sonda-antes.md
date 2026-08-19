@@ -1,2 +1,2 @@
 - O re-registro na bandeja agora só acontece depois de provar que o ícone responde leituras — re-registrar às cegas fazia a extensão resetar o item num momento ruim e derrubava um ícone que já estava aparecendo (era o ícone que sumia sozinho segundos depois de aparecer)
-- O re-registro para na primeira tentativa bem-sucedida e insiste por até uns 3 minutos quando o app demora a assentar — sondar de novo não custa nada
+- O re-registro para na primeira tentativa bem-sucedida e só dá o trabalho por encerrado depois de conferir que o registro pegou (registrar abre uns segundos de surdez no app — se a extensão ler nessa janela, fica ícone visível com clique morto), e insiste por até uns 3 minutos
