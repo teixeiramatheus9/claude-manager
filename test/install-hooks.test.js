@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addHooks, removeHooks, ensureHooks } from '../scripts/install-hooks.js';
+import { addHooks, removeAppHooks, removeHooks, ensureHooks } from '../scripts/install-hooks.js';
 
 const COMMAND = 'node "/home/user/Claude Manager/src/hook/hook-emit.js"';
 
@@ -59,5 +59,17 @@ describe('install-hooks', () => {
     expect(removed.hooks.Stop).toHaveLength(1);
     expect(removed.hooks.Stop[0].hooks[0].command).toBe('other-tool');
     expect(removed.hooks.UserPromptSubmit).toBeUndefined();
+  });
+
+  it('takes every variant of this app\'s hook out when the app quits', () => {
+    const settings = addHooks({}, 'node /opt/velho/hook-emit.js');
+    const withBoth = addHooks(settings, 'node /opt/novo/hook-emit.js');
+    withBoth.hooks.Stop.push({ hooks: [{ type: 'command', command: 'ferramenta-de-terceiro' }] });
+    const cleaned = removeAppHooks(withBoth);
+    const commands = Object.values(cleaned.hooks ?? {})
+      .flat()
+      .flatMap((group) => group.hooks ?? [])
+      .map((hook) => hook.command);
+    expect(commands).toEqual(['ferramenta-de-terceiro']);
   });
 });

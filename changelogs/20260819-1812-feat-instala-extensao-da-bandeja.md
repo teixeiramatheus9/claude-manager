@@ -1,0 +1,1 @@
+- A atualização já traz a bandeja pronta no GNOME: o app instala sozinho a extensão appindicator (Ubuntu e Fedora, sem senha e sem pacote de distro) e avisa no painel que ela passa a valer no próximo login. No macOS não existe bandeja de propósito — lá fechar o app encerra

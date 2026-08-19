@@ -19,9 +19,11 @@ export function trayMenuTemplate({ bubbleVisible }) {
   ];
 }
 
-// macOS and Windows always have a tray; Linux has to be asked.
+// Linux only, on purpose. On macOS closing the app is meant to end it — and
+// to take this app's Claude Code hooks with it — so there is nothing to park
+// in the menu bar.
 export async function detectTrayHost({ platform, execFn }) {
-  if (platform !== 'linux') return true;
+  if (platform !== 'linux') return false;
   try {
     const { stdout } = await execFn('gdbus', [
       'call',

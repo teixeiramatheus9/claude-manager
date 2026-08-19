@@ -841,6 +841,17 @@ function renderUpdateBanner(update) {
   updateBanner.disabled = Boolean(update.installing);
 }
 
+const trayStatusLine = document.getElementById('tray-status');
+
+// GNOME picks up a newly installed extension only when the shell starts, so
+// the tray this app just installed can only appear in the next session.
+function renderTrayStatus(needsRelogin) {
+  trayStatusLine.classList.toggle('hidden', !needsRelogin);
+  if (needsRelogin) {
+    trayStatusLine.textContent = '# bandeja instalada — ela aparece no próximo login';
+  }
+}
+
 const voiceStatusLine = document.getElementById('voice-status');
 
 function renderVoiceStatus(voice) {
@@ -890,6 +901,7 @@ window.manager.onState((state) => {
   renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);
   renderVoiceStatus(state.voiceDownloading);
+  renderTrayStatus(state.trayNeedsRelogin);
   renderUsage(state.tokens);
   renderBadge(state.sessions);
   lastUnreadCount = state.unread;
