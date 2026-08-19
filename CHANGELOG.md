@@ -14,6 +14,7 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 - Instalação das vozes neurais não depende mais do bzip2 do sistema — a descompressão agora é feita pelo próprio app (corrige voz robótica em máquinas sem bzip2)
 
 ### Feats
+- Ícone do app refeito na identidade nova: tile grafite com o prompt pixel, no lugar do círculo laranja
 - Redesign completo da interface na direção "terminal": grafite e azul-aço, tudo monoespaçado, status por glifos e ações em [colchetes] — bolinha, painel de sessões, chats, configurações e notificação
 - Cada chat na lista ganhou um ✕ pra fechar: some da lista na hora e não volta no restart — se o terminal voltar a ser usado, o chat reaparece como sessão nova
 - Bolinha em janela própria e painel em janela separada: a bolinha nunca mais é redimensionada, o que elimina o fantasma que aparecia ao abrir e fechar o painel nas bordas da tela
