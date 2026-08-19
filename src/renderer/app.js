@@ -728,6 +728,32 @@ function finishCard(card, session) {
   return card;
 }
 
+// The empty list offers a rescan: chats opened before the manager was up (or
+// closed on the ✕) never fire a hook, so they only come back by adoption.
+function emptyStateElement() {
+  const empty = document.createElement('div');
+  empty.id = 'empty';
+  const text = document.createElement('span');
+  text.textContent = '# nenhuma sessão por enquanto — manda o claude trabalhar que eu te aviso';
+  const rescan = document.createElement('button');
+  rescan.id = 'rescan';
+  rescan.textContent = '[procurar chats abertos]';
+  rescan.addEventListener('click', async () => {
+    rescan.disabled = true;
+    rescan.textContent = '[procurando…]';
+    try {
+      const adopted = await window.manager.rescanSessions();
+      // when something is adopted the state event redraws the whole list
+      if (!adopted) text.textContent = '# não achei nenhum chat aberto por aqui';
+    } finally {
+      rescan.disabled = false;
+      rescan.textContent = '[procurar chats abertos]';
+    }
+  });
+  empty.append(text, rescan);
+  return empty;
+}
+
 function sessionElement(session) {
   const state = session.question ? 'question' : session.status;
   const card = document.createElement('div');
@@ -936,10 +962,7 @@ window.manager.onState((state) => {
 
   sessionsContainer.replaceChildren();
   if (!state.sessions.length) {
-    const empty = document.createElement('div');
-    empty.id = 'empty';
-    empty.textContent = '# nenhuma sessão por enquanto — manda o claude trabalhar que eu te aviso';
-    sessionsContainer.append(empty);
+    sessionsContainer.append(emptyStateElement());
     return;
   }
   for (const session of state.sessions) {

@@ -35,7 +35,12 @@ import {
 import { UPDATE_DONE_PHRASE, shouldAnnounce } from './update-notice.js';
 import { log } from './log.js';
 import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
-import { readSessionChannel, readLiveSessionIds } from './cc-sessions.js';
+import {
+  readSessionChannel,
+  readLiveSessionIds,
+  readAdoptableSessions,
+  claudeTranscriptPath,
+} from './cc-sessions.js';
 import { readInboundPolicy, setInboundPolicy } from './claude-settings.js';
 import { sendUserMessage } from './cc-peer.js';
 
@@ -519,6 +524,19 @@ function onHookEvent(event) {
 ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('session:remove', (_event, sessionId) => registry.remove(sessionId));
+
+// The panel's rescan: adopt the live interactive chats the hooks never
+// reported — opened before the manager was up, or closed on the ✕.
+ipcMain.handle('sessions:rescan', () => {
+  const records = readAdoptableSessions();
+  if (!records) return 0;
+  return registry.adopt(
+    records.map((record) => {
+      const transcriptPath = claudeTranscriptPath(record.cwd, record.sessionId);
+      return { ...record, transcriptPath: fs.existsSync(transcriptPath) ? transcriptPath : null };
+    }),
+  );
+});
 
 ipcMain.on('update:apply', () => {
   const version = updateStatus.ready ?? updateStatus.available;
