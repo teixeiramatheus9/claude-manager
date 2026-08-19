@@ -130,7 +130,12 @@ function encodePng(size, pixelAt) {
 }
 
 // Same 11x11 grid as the app icon, scaled to the tray size and drawn in the
-// accent alone so the panel's own background shows through.
+// accent alone so the panel's own background shows through. A panel renders
+// this at 16-22px, where the loose 2x2 marks read as scattered dots — so the
+// tray variant fattens each mark by half a unit per side, which joins the
+// chevron into one stroke while keeping the same glyph.
+const TRAY_BOLD = 0.5;
+
 function trayPixel(x, y) {
   const unit = TRAY_SIZE / GRID;
   let hits = 0;
@@ -138,7 +143,15 @@ function trayPixel(x, y) {
     for (let sx = 0; sx < 3; sx++) {
       const gx = (x + (sx + 0.5) / 3) / unit;
       const gy = (y + (sy + 0.5) / 3) / unit;
-      if (MARKS.some(([mx, my, mw, mh]) => gx >= mx && gx < mx + mw && gy >= my && gy < my + mh)) {
+      if (
+        MARKS.some(
+          ([mx, my, mw, mh]) =>
+            gx >= mx - TRAY_BOLD &&
+            gx < mx + mw + TRAY_BOLD &&
+            gy >= my - TRAY_BOLD &&
+            gy < my + mh + TRAY_BOLD,
+        )
+      ) {
         hits++;
       }
     }

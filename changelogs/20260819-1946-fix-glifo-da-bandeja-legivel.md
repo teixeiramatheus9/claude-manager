@@ -1,0 +1,1 @@
+- Ícone da bandeja mais legível: as marcas do glifo agora se conectam num traço contínuo no tamanho de painel — antes viravam pontinhos soltos que ninguém reconhecia como o app

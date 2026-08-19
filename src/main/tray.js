@@ -34,10 +34,10 @@ export function trayItemServiceName(pid) {
 // Right after startup Electron's item answers property reads with errors, and
 // GNOME's appindicator extension only retries for ~3s before dropping the icon
 // for good — registered, alive, invisible. Re-registering makes the watcher
-// reset the item and read the properties again, which succeeds once the app
-// has settled; doing it twice covers a slow start. Idempotent: the watcher
-// resets an item it already shows instead of duplicating it.
-const REREGISTER_DELAYS_MS = [6000, 20000];
+// reset the item and read the properties again. But a reset while reads still
+// fail tears down an icon the panel may already be showing, so each attempt
+// first proves the item answers a read of its own, registers once, and stops.
+const REREGISTER_DELAYS_MS = [6000, 12000, 24000];
 
 export async function nudgeTrayRegistration({
   pid,
@@ -46,8 +46,26 @@ export async function nudgeTrayRegistration({
   delays = REREGISTER_DELAYS_MS,
   log,
 }) {
+  const service = trayItemServiceName(pid);
   for (const delay of delays) {
     await waitFn(delay);
+    try {
+      await execFn('gdbus', [
+        'call',
+        '--session',
+        '--dest',
+        service,
+        '--object-path',
+        '/StatusNotifierItem',
+        '--method',
+        'org.freedesktop.DBus.Properties.Get',
+        'org.kde.StatusNotifierItem',
+        'Id',
+      ]);
+    } catch (error) {
+      log?.(`tray: item not answering reads yet, holding the nudge: ${error}`);
+      continue;
+    }
     try {
       await execFn('gdbus', [
         'call',
@@ -58,8 +76,9 @@ export async function nudgeTrayRegistration({
         '/StatusNotifierWatcher',
         '--method',
         'org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem',
-        trayItemServiceName(pid),
+        service,
       ]);
+      return;
     } catch (error) {
       log?.(`tray: re-register nudge failed: ${error}`);
     }
