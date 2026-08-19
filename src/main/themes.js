@@ -10,4 +10,4 @@ export const THEMES = {
   matrix: { label: 'matrix code' },
 };
 
-export const DEFAULT_THEME = 'aco';
+export const DEFAULT_THEME = 'mono';
