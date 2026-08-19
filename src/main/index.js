@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureHooks } from '../../scripts/install-hooks.js';
+import { installPiper, isPiperInstalled, piperPaths } from './piper-installer.js';
 import { SessionRegistry } from './session-registry.js';
 import { startSocketServer } from './socket-server.js';
 import { readTranscriptSnapshot } from './transcript.js';
@@ -215,11 +216,27 @@ ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('message:dismiss', (_event, sessionId) => registry.dismissMessage(sessionId));
 
-// Local TTS, offline and token-free. Prefers Piper (neural pt-BR voice,
-// installed by scripts/install-tts.sh); falls back to spd-say (robotic).
-const piperBinary = path.join(configDir, 'piper', 'piper', 'piper');
-const piperVoice = path.join(configDir, 'piper', 'pt_BR-faber-medium.onnx');
+// Local TTS, offline and token-free. Prefers Piper (neural pt-BR voice);
+// falls back to spd-say (robotic) while Piper auto-downloads on first use.
+const piperDir = path.join(configDir, 'piper');
+const { binary: piperBinary, voice: piperVoice } = piperPaths(piperDir);
 const PIPER_SAMPLE_RATE = '22050';
+let piperDownloadStarted = false;
+
+function ensurePiperInBackground() {
+  if (piperDownloadStarted || isPiperInstalled(piperDir)) return;
+  piperDownloadStarted = true;
+  log('piper: downloading neural voice…');
+  installPiper(piperDir)
+    .then(() => {
+      log('piper: neural voice installed');
+      speakWithPiper('Voz neural instalada. Agora eu falo assim!');
+    })
+    .catch((error) => {
+      piperDownloadStarted = false; // allow a retry on the next speak
+      log(`piper install failed: ${error}`);
+    });
+}
 
 let speechProcesses = [];
 
@@ -255,10 +272,11 @@ ipcMain.on('tts:speak', (_event, rawText) => {
   if (!text) return;
   stopSpeaking();
   try {
-    if (fs.existsSync(piperBinary) && fs.existsSync(piperVoice)) {
+    if (isPiperInstalled(piperDir)) {
       speakWithPiper(text);
     } else {
       spawnDetached('spd-say', ['-l', 'pt-BR', '--', text]);
+      ensurePiperInBackground();
     }
   } catch (error) {
     log(`tts failed: ${error}`);
