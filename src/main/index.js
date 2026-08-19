@@ -142,7 +142,11 @@ function createMainWindow() {
   mainWindow = new BrowserWindow(options);
   applyModeBounds('bubble');
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
-  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // visibleOnFullScreen forces accessory mode on macOS, which hides the
+  // dock icon — there the dock wins over overlaying fullscreen apps.
+  mainWindow.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: process.platform !== 'darwin',
+  });
   mainWindow.loadFile(path.join(rendererDir, 'app.html'));
   mainWindow.webContents.on('did-finish-load', () => {
     sendToRenderer('ui:env', { managed: canPositionWindows });
