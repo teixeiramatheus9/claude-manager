@@ -427,6 +427,10 @@ function scheduleSessionsSave() {
   }, 500);
 }
 
+// A second instance would unlink and take over the unix socket, leaving the
+// first one running but unreachable by the hooks.
+if (!app.requestSingleInstanceLock()) app.exit(0);
+
 app.whenReady().then(() => {
   if (process.platform === 'darwin') app.dock?.hide();
   ensureHooksInstalled();
