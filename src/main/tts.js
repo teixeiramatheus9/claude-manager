@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DEFAULT_VOICE, VOICES, installVoice, isVoiceInstalled, runtimeName, voicePaths } from './sherpa-installer.js';
-import { psQuote } from './win32-native.js';
+import { encodeAnsiArgvText, psQuote, readAnsiCodepage } from './win32-native.js';
 import { applyGain } from './wav-gain.js';
 import { configDir } from './paths.js';
 import { log } from './log.js';
@@ -87,6 +87,18 @@ function speakWithSystemVoice(text, spawnFn, volume = 100, useVoiceFlag = true) 
   processes = [child];
 }
 
+// sherpa reads its argv as UTF-8 but the Windows CRT hands it over in the
+// ANSI codepage, so accents arrive corrupted and get SPOKEN as garbage
+// syllables ("concluída" -> "conclu-ã-í-da"). encodeAnsiArgvText undoes that;
+// the codepage is read once and cached.
+let cachedAnsiCodepage = null;
+
+function neuralArgvText(text) {
+  if (process.platform !== 'win32') return text;
+  cachedAnsiCodepage ??= readAnsiCodepage(execFileSync);
+  return encodeAnsiArgvText(text, cachedAnsiCodepage);
+}
+
 // sherpa-onnx has no raw-audio streaming mode, so it renders a wav and the
 // system player plays it.
 export function speakNeural(text, voiceId, spawnFn = spawn, volume = 100) {
@@ -99,7 +111,7 @@ export function speakNeural(text, voiceId, spawnFn = spawn, volume = 100) {
   }
   const synth = spawnFn(
     binary,
-    [...args, '--num-threads=4', `--output-filename=${wavFile}`, text],
+    [...args, '--num-threads=4', `--output-filename=${wavFile}`, neuralArgvText(text)],
     { env, stdio: 'ignore' },
   );
   processes = [synth];

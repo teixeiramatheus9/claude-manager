@@ -89,9 +89,11 @@ describe('runtime and voice resolution', () => {
 describe('speak', () => {
   it('synthesizes with sherpa and plays the wav when the voice is installed', () => {
     const { calls, children, spawnFn } = recorder();
-    speak('olá', { voice: 'faber', spawnFn, installed: true });
+    // accent-free on purpose: the win32 argv encoding is unit-tested on its
+    // own (encodeAnsiArgvText) and would rewrite accented args here.
+    speak('oi amigo', { voice: 'faber', spawnFn, installed: true });
     expect(calls[0].command).toContain('sherpa-onnx-offline-tts');
-    expect(calls[0].args.at(-1)).toBe('olá');
+    expect(calls[0].args.at(-1)).toBe('oi amigo');
     expect(calls[0].args.some((a) => a.startsWith('--vits-model='))).toBe(true);
     children[0].emit('exit', 0, null);
     expect(calls[1].command).toBe(playerCommand('x.wav', process.platform)[0]);
