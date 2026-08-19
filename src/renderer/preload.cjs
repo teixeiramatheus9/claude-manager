@@ -24,7 +24,7 @@ contextBridge.exposeInMainWorld('manager', {
   onState: (callback) => ipcRenderer.on('state', (_event, state) => callback(state)),
   onTooltip: (callback) => ipcRenderer.on('tooltip', (_event, data) => callback(data)),
   onChime: (callback) => ipcRenderer.on('chime', (_event, data) => callback(data)),
-  speak: (text) => ipcRenderer.send('tts:speak', text),
+  speak: (text, volume) => ipcRenderer.send('tts:speak', { text, volume }),
   onBlur: (callback) => ipcRenderer.on('ui:blur', () => callback()),
   onEnv: (callback) => ipcRenderer.on('ui:env', (_event, env) => callback(env)),
   onOverlayMode: (callback) => ipcRenderer.on('overlay:mode', (_event, mode) => callback(mode)),

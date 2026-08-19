@@ -69,6 +69,7 @@ tooltip.addEventListener('click', openPanel);
 document.getElementById('close').addEventListener('click', closePanel);
 document.getElementById('quit').addEventListener('click', () => window.manager.quit());
 
+
 bubble.addEventListener('mousedown', (event) => {
   if (managed && event.button === 0) window.manager.dragStart();
 });
@@ -88,7 +89,7 @@ window.manager.onClick(() => {
 
 // --- Notification chimes (synthesized: soft, short, no alarm vibes) ---
 const muteButton = document.getElementById('mute');
-let muted = localStorage.getItem('muted') === '1';
+let muted = false;
 let audioContext = null;
 
 function renderMuteButton() {
@@ -98,9 +99,9 @@ renderMuteButton();
 
 muteButton.addEventListener('click', () => {
   muted = !muted;
-  localStorage.setItem('muted', muted ? '1' : '0');
+  window.manager.setConfig({ muted });
   renderMuteButton();
-  if (!muted) chime('done');
+  if (!muted) chime('done', true);
 });
 
 // --- manager chat view ---
@@ -222,25 +223,21 @@ const CHIME_PRESETS = {
   },
 };
 
+// Sound lives in the shared config, not in this window: the panel changes it
+// but the bubble window is the one that chimes and speaks.
 const DEFAULT_TYPE_VOLUMES = { start: 60, done: 100, question: 100, waiting: 100 };
 
-let soundVolume = Number(localStorage.getItem('soundVolume') ?? 70);
-let soundTimbre = localStorage.getItem('soundTimbre') ?? 'marimba';
-if (!CHIME_PRESETS[soundTimbre]) soundTimbre = 'marimba';
+let soundVolume = 70;
+let voiceVolume = 100;
+let soundTimbre = 'marimba';
 let typeVolumes = { ...DEFAULT_TYPE_VOLUMES };
-try {
-  typeVolumes = { ...DEFAULT_TYPE_VOLUMES, ...JSON.parse(localStorage.getItem('soundTypeVolumes')) };
-} catch {
-  // defaults stay
-}
-let ttsEnabled = localStorage.getItem('ttsEnabled') === '1';
+let ttsEnabled = false;
 
 const settingsButton = document.getElementById('settings');
 const settingsPop = document.getElementById('settings-pop');
 const volumeInput = document.getElementById('volume');
+const voiceVolumeInput = document.getElementById('voice-volume');
 const timbreSelect = document.getElementById('timbre');
-volumeInput.value = String(soundVolume);
-timbreSelect.value = soundTimbre;
 
 // One view at a time: the list, the config or the manager chat.
 settingsButton.addEventListener('click', () => {
@@ -250,48 +247,62 @@ settingsButton.addEventListener('click', () => {
   sessionsContainer.classList.toggle('hidden', opening);
   renderHeaderPath();
 });
-volumeInput.addEventListener('input', () => {
+// The preview plays right away, so the local value moves first: waiting for
+// the config round trip would preview the volume you just left behind.
+volumeInput.addEventListener('change', () => {
   soundVolume = Number(volumeInput.value);
-  localStorage.setItem('soundVolume', String(soundVolume));
+  window.manager.setConfig({ soundVolume });
+  chime('done', true);
+});
+voiceVolumeInput.addEventListener('change', () => {
+  voiceVolume = Number(voiceVolumeInput.value);
+  window.manager.setConfig({ voiceVolume });
+  speakSample('Volume da voz do gerente.');
 });
 timbreSelect.addEventListener('change', () => {
   soundTimbre = timbreSelect.value;
-  localStorage.setItem('soundTimbre', soundTimbre);
+  window.manager.setConfig({ timbre: soundTimbre });
+  chime('done', true);
 });
 document.getElementById('sound-test').addEventListener('click', () => chime('done', true));
 
 for (const slider of document.querySelectorAll('.type-row input[type="range"]')) {
   const kind = slider.dataset.kind;
-  slider.value = String(typeVolumes[kind] ?? 100);
-  slider.addEventListener('input', () => {
-    typeVolumes[kind] = Number(slider.value);
-    localStorage.setItem('soundTypeVolumes', JSON.stringify(typeVolumes));
+  slider.addEventListener('change', () => {
+    typeVolumes = { ...typeVolumes, [kind]: Number(slider.value) };
+    window.manager.setConfig({ typeVolumes });
+    chime(kind, true);
   });
-  slider.addEventListener('change', () => chime(kind, true));
 }
 
 const ttsCheckbox = document.getElementById('tts');
 const ttsState = document.getElementById('tts-state');
-ttsCheckbox.checked = ttsEnabled;
 const renderTtsState = () => {
   ttsState.textContent = ttsEnabled ? '[on]' : '[off]';
 };
-renderTtsState();
 ttsCheckbox.addEventListener('change', () => {
   ttsEnabled = ttsCheckbox.checked;
-  localStorage.setItem('ttsEnabled', ttsEnabled ? '1' : '0');
+  window.manager.setConfig({ ttsEnabled });
   renderTtsState();
-  if (ttsEnabled) window.manager.speak('Notificação por voz ativada.');
+  if (ttsEnabled) speakSample('Notificação por voz ativada.');
 });
 
+// The manager's voice answers to its own slider and to the master volume.
+function speakSample(text) {
+  window.manager.speak(text, Math.round((voiceVolume * soundVolume) / 100));
+}
+
 document.getElementById('voice-test').addEventListener('click', () => {
-  window.manager.speak('Testando a voz do gerente.');
+  speakSample('Testando a voz do gerente.');
 });
 
 // Sliders paint their own fill and print the value beside them.
 function renderSlider(slider) {
+  const min = Number(slider.min) || 0;
   const max = Number(slider.max) || 100;
-  const percent = Math.round((Number(slider.value) / max) * 100);
+  // The fill has to start where the thumb does, or a slider that does not
+  // begin at zero paints a value it is not showing.
+  const percent = Math.round(((Number(slider.value) - min) / (max - min)) * 100);
   slider.style.setProperty('--pct', `${percent}%`);
   const label = document.querySelector(`.slider-value[data-for="${slider.id}"]`);
   if (label) label.textContent = `${slider.value}%`;
@@ -424,6 +435,14 @@ updateCheckButton.addEventListener('click', async () => {
 
 const terminalSelect = document.getElementById('terminal');
 const voiceSelect = document.getElementById('voice');
+const themeSelect = document.getElementById('theme');
+const panelScaleInput = document.getElementById('panel-scale');
+
+// Both windows read the theme off the shared state, so switching it in the
+// panel repaints the bubble at the same time.
+function applyTheme(theme) {
+  if (theme) document.body.dataset.theme = theme;
+}
 for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
@@ -451,9 +470,25 @@ window.manager.getConfig().then((config) => {
     );
   }
   voiceSelect.value = config.voice;
+  if (Array.isArray(config.themes) && config.themes.length) {
+    themeSelect.replaceChildren(
+      ...config.themes.map(({ value, label }) => new Option(label, value)),
+    );
+  }
+  themeSelect.value = config.theme;
+  applyTheme(config.theme);
+  const range = config.panelScaleRange;
+  if (range) {
+    panelScaleInput.min = String(range.min);
+    panelScaleInput.max = String(range.max);
+    panelScaleInput.step = String(range.step);
+  }
+  panelScaleInput.value = String(config.panelScale);
+  renderSlider(panelScaleInput);
   refreshDropdowns();
   budgetInput.value = String(config.tokenBudgetDaily);
   renderBudgetLabel(config.tokenBudgetDaily);
+  renderSlider(budgetInput);
 });
 
 terminalSelect.addEventListener('change', () => {
@@ -464,7 +499,17 @@ voiceSelect.addEventListener('change', () => {
   window.manager.setConfig({ voice: voiceSelect.value });
 });
 
+panelScaleInput.addEventListener('change', () => {
+  window.manager.setConfig({ panelScale: Number(panelScaleInput.value) });
+});
+
+themeSelect.addEventListener('change', () => {
+  applyTheme(themeSelect.value);
+  window.manager.setConfig({ theme: themeSelect.value });
+});
+
 budgetInput.addEventListener('input', () => renderBudgetLabel(Number(budgetInput.value)));
+
 budgetInput.addEventListener('change', () => {
   window.manager.setConfig({ tokenBudgetDaily: Number(budgetInput.value) });
 });
@@ -553,7 +598,7 @@ window.manager.onTooltip(({ projectName, text, kind }) => {
     chime(kind);
     if (ttsEnabled && !muted) {
       const phrase = TTS_PHRASES[kind] ?? TTS_PHRASES.waiting;
-      window.manager.speak(phrase(projectName));
+      speakSample(phrase(projectName));
     }
   }
   const alert = kind === 'question' || kind === 'waiting';
@@ -796,7 +841,37 @@ function renderVoiceStatus(voice) {
   );
 }
 
+// Every state carries the sound settings, so both windows agree on what to
+// play and the panel shows what is actually in effect.
+function applySound(sound) {
+  if (!sound) return;
+  muted = sound.muted;
+  soundVolume = sound.volume;
+  voiceVolume = sound.voiceVolume;
+  soundTimbre = CHIME_PRESETS[sound.timbre] ? sound.timbre : 'marimba';
+  ttsEnabled = sound.ttsEnabled;
+  typeVolumes = { ...DEFAULT_TYPE_VOLUMES, ...sound.typeVolumes };
+  renderMuteButton();
+  renderTtsState();
+  ttsCheckbox.checked = ttsEnabled;
+  timbreSelect.value = soundTimbre;
+  for (const [input, value] of [
+    [volumeInput, soundVolume],
+    [voiceVolumeInput, voiceVolume],
+  ]) {
+    if (document.activeElement !== input) input.value = String(value);
+    renderSlider(input);
+  }
+  for (const slider of document.querySelectorAll('.type-row input[type="range"]')) {
+    if (document.activeElement !== slider) slider.value = String(typeVolumes[slider.dataset.kind] ?? 100);
+    renderSlider(slider);
+  }
+  refreshDropdowns();
+}
+
 window.manager.onState((state) => {
+  applyTheme(state.theme);
+  applySound(state.sound);
   renderUpdateBanner(state.update);
   renderVoiceStatus(state.voiceDownloading);
   renderUsage(state.tokens);

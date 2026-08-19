@@ -1,10 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_VOICE } from './sherpa-installer.js';
+import { DEFAULT_THEME } from './themes.js';
+import { PANEL_SCALE } from './panel-size.js';
 
 export const DEFAULT_CONFIG = {
   terminal: 'auto',
   voice: DEFAULT_VOICE,
+  theme: DEFAULT_THEME,
+  panelScale: PANEL_SCALE.default,
+  muted: false,
+  soundVolume: 70,
+  voiceVolume: 100,
+  timbre: 'marimba',
+  ttsEnabled: false,
+  typeVolumes: { start: 100, done: 100, question: 100, waiting: 100 },
   tokenBudgetDaily: 100000,
 };
 
