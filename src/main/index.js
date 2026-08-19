@@ -104,7 +104,7 @@ function sendToRenderer(channel, payload) {
   }
 }
 
-let updateStatus = { mode: 'off', available: null, ready: null };
+let updateStatus = { mode: 'off', available: null, ready: null, installing: false };
 let updaterHandle = { apply: () => {} };
 let announcedUpdateVersion = null;
 
@@ -123,8 +123,13 @@ function sendState() {
 }
 
 function onUpdateStatus(status) {
+  const wasInstalling = updateStatus.installing;
   updateStatus = status;
   sendState();
+  if (status.installing !== wasInstalling) {
+    setFloatAboveEverything(!status.installing);
+    if (status.installing) hideOverlay();
+  }
   const version = status.ready ?? status.available;
   if (!version || announcedUpdateVersion === version) return;
   announcedUpdateVersion = version;
@@ -242,9 +247,21 @@ const windowOptions = {
 
 // visibleOnFullScreen turns the app into an accessory on macOS (no dock
 // icon), which is why the panel carries its own quit action.
+// Dropped while a package installs: the system asks for a password in its own
+// dialog, and a screen-saver-level overlay would sit on top of it — the user
+// would see the prompt but never reach it.
+let floatAboveEverything = true;
+
 function stayOnTop(win) {
-  win.setAlwaysOnTop(true, 'screen-saver');
+  if (!win || win.isDestroyed()) return;
+  win.setAlwaysOnTop(floatAboveEverything, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+}
+
+function setFloatAboveEverything(enabled) {
+  if (floatAboveEverything === enabled) return;
+  floatAboveEverything = enabled;
+  for (const win of [mainWindow, overlayWindow]) stayOnTop(win);
 }
 
 function createWindows() {

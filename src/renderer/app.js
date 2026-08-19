@@ -769,13 +769,16 @@ function renderUpdateBanner(update) {
     return;
   }
   updateBanner.classList.remove('hidden');
-  if (update.ready) {
+  if (update.installing) {
+    updateBanner.textContent = `⇣ instalando v${update.available}… (confirma a senha se o sistema pedir)`;
+  } else if (update.ready) {
     updateBanner.textContent = `⇡ v${update.ready} pronta — [reiniciar agora]`;
   } else if (update.mode === 'auto') {
     updateBanner.textContent = `⇣ baixando v${update.available}…`;
   } else {
-    updateBanner.textContent = `⇡ v${update.available} disponível — [baixar]`;
+    updateBanner.textContent = `⇡ v${update.available} disponível — [instalar]`;
   }
+  updateBanner.disabled = Boolean(update.installing);
 }
 
 const voiceStatusLine = document.getElementById('voice-status');
