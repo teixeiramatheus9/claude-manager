@@ -47,6 +47,10 @@ process.stdin.on('end', () => {
   } catch {
     process.exit(0);
   }
+  const { WAVETERM_BLOCKID, WAVETERM_TABID, WAVETERM_JWT } = process.env;
+  if (WAVETERM_BLOCKID && WAVETERM_TABID && WAVETERM_JWT) {
+    event.wave = { blockId: WAVETERM_BLOCKID, tabId: WAVETERM_TABID, jwt: WAVETERM_JWT };
+  }
   const socket = net.connect(socketPath);
   socket.on('connect', () => socket.end(`${JSON.stringify(event)}\n`));
   socket.on('close', () => process.exit(0));

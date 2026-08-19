@@ -17,7 +17,8 @@ const hookScript = path.join(
 function runHook(input, env = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [hookScript], {
-      env: { ...process.env, ...env },
+      // blank the wave vars so results don't depend on the terminal running the suite
+      env: { ...process.env, WAVETERM_BLOCKID: '', WAVETERM_TABID: '', WAVETERM_JWT: '', ...env },
       stdio: ['pipe', 'ignore', 'ignore'],
     });
     child.on('close', (code) => resolve(code));
@@ -47,6 +48,37 @@ describe('hook-emit', () => {
     const exitCode = await runHook(JSON.stringify(event), { CLAUDE_MANAGER_SOCKET: socketFile });
     expect(exitCode).toBe(0);
     expect(JSON.parse(await received)).toEqual(event);
+  });
+
+  it('attaches the waveterm target when running inside a wave block', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-hook-'));
+    const socketFile = path.join(dir, 'test.sock');
+    const received = new Promise((resolve) => {
+      const server = net.createServer((socket) => {
+        let data = '';
+        socket.on('data', (chunk) => {
+          data += chunk;
+        });
+        socket.on('end', () => {
+          server.close();
+          resolve(data);
+        });
+      });
+      server.listen(socketFile);
+    });
+
+    const event = { hook_event_name: 'Stop', session_id: 'abc', cwd: '/tmp/proj' };
+    const exitCode = await runHook(JSON.stringify(event), {
+      CLAUDE_MANAGER_SOCKET: socketFile,
+      WAVETERM_BLOCKID: 'b1',
+      WAVETERM_TABID: 't1',
+      WAVETERM_JWT: 'j1',
+    });
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(await received)).toEqual({
+      ...event,
+      wave: { blockId: 'b1', tabId: 't1', jwt: 'j1' },
+    });
   });
 
   it('exits 0 immediately when CLAUDE_MANAGER_INTERNAL=1', async () => {

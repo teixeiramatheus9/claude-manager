@@ -302,6 +302,11 @@ function renderBudgetLabel(value) {
 }
 
 window.manager.getConfig().then((config) => {
+  if (Array.isArray(config.terminals) && config.terminals.length) {
+    terminalSelect.replaceChildren(
+      ...config.terminals.map(({ value, label }) => new Option(label, value)),
+    );
+  }
   terminalSelect.value = config.terminal;
   budgetInput.value = String(config.tokenBudgetDaily);
   renderBudgetLabel(config.tokenBudgetDaily);

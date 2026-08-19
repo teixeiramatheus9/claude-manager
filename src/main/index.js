@@ -254,7 +254,13 @@ ipcMain.handle('manager:chat', async (_event, rawMessage) => {
   return reply;
 });
 
-ipcMain.handle('config:get', () => managerConfig);
+ipcMain.handle('config:get', () => ({
+  ...managerConfig,
+  terminals: Object.entries(terminal.TERMINALS).map(([value, spec]) => ({
+    value,
+    label: spec.label,
+  })),
+}));
 
 ipcMain.handle('config:set', (_event, partial) => {
   const allowed = {};
