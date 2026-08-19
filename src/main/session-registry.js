@@ -98,15 +98,6 @@ export class SessionRegistry extends EventEmitter {
     this.emit('change');
   }
 
-  dismissMessage(sessionId) {
-    const session = this.sessions.get(sessionId);
-    if (!session) return;
-    session.managerMessage = null;
-    session.question = null;
-    session.unread = false;
-    this.emit('change');
-  }
-
   setQuestion(sessionId, question) {
     const session = this.sessions.get(sessionId);
     if (!session) return;

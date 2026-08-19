@@ -691,15 +691,6 @@ function sessionElement(session) {
     const balloon = document.createElement('div');
     balloon.className = 'message';
 
-    const dismiss = document.createElement('button');
-    dismiss.className = 'message-dismiss';
-    dismiss.title = 'Dispensar mensagem';
-    dismiss.textContent = '[x]';
-    dismiss.addEventListener('click', (event) => {
-      event.stopPropagation();
-      window.manager.dismissMessage(session.id);
-    });
-    balloon.append(dismiss);
     const text = document.createElement('div');
     if (session.question?.questions?.length) {
       text.textContent = messageText;

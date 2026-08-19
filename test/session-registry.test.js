@@ -111,17 +111,6 @@ describe('SessionRegistry', () => {
     expect(session.unread).toBe(false);
   });
 
-  it('dismissMessage clears message, question and unread', () => {
-    const registry = new SessionRegistry();
-    registry.applyEvent(promptEvent({ hook_event_name: 'Notification', message: 'esperando' }));
-    registry.setQuestion('s1', { questions: [{ question: 'Qual?', options: ['a'] }] });
-    registry.dismissMessage('s1');
-    const [session] = registry.list();
-    expect(session.managerMessage).toBeNull();
-    expect(session.question).toBeNull();
-    expect(session.unread).toBe(false);
-  });
-
   it('serialize/hydrate round-trips sessions without emitting change', () => {
     const source = new SessionRegistry();
     source.applyEvent(promptEvent({ hook_event_name: 'Stop' }));
