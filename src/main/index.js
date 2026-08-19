@@ -14,8 +14,19 @@ import { loadConfig, saveConfig } from './config-store.js';
 import { TokenBudget } from './token-budget.js';
 import { terminal, tts } from './platform.js';
 import { VOICES } from './sherpa-installer.js';
+import { THEMES } from './themes.js';
+import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
 import { setupUpdater } from './updater.js';
-import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir } from './paths.js';
+import {
+  socketPath,
+  stateFile,
+  sessionsFile,
+  configFile,
+  usageFile,
+  updateNoticeFile,
+  configDir,
+} from './paths.js';
+import { UPDATE_DONE_PHRASE, shouldAnnounce } from './update-notice.js';
 import { log } from './log.js';
 import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
 import { readSessionChannel, readLiveSessionIds } from './cc-sessions.js';
@@ -81,6 +92,16 @@ const MODE_SIZES = {
   panel: { width: 436, height: 552 },
 };
 const BUBBLE_BOX = MODE_SIZES.bubble.width;
+// The panel size is a setting, not a drag: growing it zooms the contents by
+// the same factor, so the text gets bigger instead of more rows fitting.
+function panelScale() {
+  return clampScale(managerConfig.panelScale) / 100;
+}
+
+function panelSize() {
+  const workArea = screen.getDisplayNearestPoint(bubbleAnchor ?? { x: 0, y: 0 }).workArea;
+  return panelSizeForScale(managerConfig.panelScale, MODE_SIZES.panel, workArea);
+}
 const TOOLTIP_HIDE_MS = 8000;
 const CLICK_THRESHOLD_PX = 6;
 const PRUNE_INTERVAL_MS = 10 * 60 * 1000;
@@ -114,6 +135,15 @@ function sendState() {
     unread: registry.unreadCount(),
     update: updateStatus,
     voiceDownloading: tts.downloadingVoice(),
+    theme: managerConfig.theme,
+    sound: {
+      muted: managerConfig.muted,
+      volume: managerConfig.soundVolume,
+      voiceVolume: managerConfig.voiceVolume,
+      timbre: managerConfig.timbre,
+      ttsEnabled: managerConfig.ttsEnabled,
+      typeVolumes: managerConfig.typeVolumes,
+    },
     tokens: {
       usedToday: tokenBudget.usedToday(),
       budget: managerConfig.tokenBudgetDaily,
@@ -165,8 +195,10 @@ function persistAnchor() {
 // toast live in a second window that is always positioned while hidden.
 const OVERLAY_GAP = 8;
 
+const clampTo = (value, min, max) => Math.min(Math.max(value, min), max);
+
 function overlayBounds(mode) {
-  const size = MODE_SIZES[mode];
+  const size = mode === 'panel' ? panelSize() : MODE_SIZES[mode];
   const anchor = bubbleAnchor ?? { x: 0, y: 0 };
   const workArea = screen.getDisplayNearestPoint(anchor).workArea;
   let x = anchor.x + BUBBLE_BOX + OVERLAY_GAP;
@@ -194,6 +226,7 @@ const SETTLE_MS = 500;
 function showOverlay(mode, { focus = false } = {}) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   overlayMode = mode;
+  overlayWindow.webContents.setZoomFactor(mode === 'panel' ? panelScale() : 1);
   overlayWindow.setBounds(overlayBounds(mode));
   overlayWindow.webContents.send('overlay:mode', mode);
   if (focus) overlayWindow.show();
@@ -231,6 +264,7 @@ ipcMain.on('overlay:open-panel', () => openPanel());
 ipcMain.on('overlay:close', () => hideOverlay());
 
 ipcMain.on('app:quit', () => app.quit());
+
 
 const windowOptions = {
   icon: iconPath,
@@ -370,19 +404,28 @@ ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('session:remove', (_event, sessionId) => registry.remove(sessionId));
 
-ipcMain.on('update:apply', () => updaterHandle.apply());
+ipcMain.on('update:apply', () => {
+  const version = updateStatus.ready ?? updateStatus.available;
+  try {
+    if (version) fs.writeFileSync(updateNoticeFile, JSON.stringify({ version }));
+  } catch (error) {
+    log(`update notice failed: ${error}`);
+  }
+  updaterHandle.apply();
+});
 
 ipcMain.handle('update:check', async () => {
   const status = await (updaterHandle.check?.() ?? updateStatus);
   return { ...status, currentVersion: app.getVersion() };
 });
 
-ipcMain.on('tts:speak', (_event, rawText) => {
-  const text = String(rawText ?? '').slice(0, 300);
+ipcMain.on('tts:speak', (_event, payload) => {
+  const text = String(payload?.text ?? payload ?? '').slice(0, 300);
   if (!text) return;
+  const volume = Number.isFinite(payload?.volume) ? payload.volume : 100;
   tts.stopSpeaking();
   try {
-    tts.speak(text, { voice: managerConfig.voice });
+    tts.speak(text, { voice: managerConfig.voice, volume });
   } catch (error) {
     log(`tts failed: ${error}`);
   }
@@ -424,12 +467,25 @@ ipcMain.handle('config:get', () => ({
     label: spec.label,
   })),
   voices: Object.entries(VOICES).map(([value, spec]) => ({ value, label: spec.label })),
+  themes: Object.entries(THEMES).map(([value, spec]) => ({ value, label: spec.label })),
+  panelScaleRange: PANEL_SCALE,
 }));
 
 ipcMain.handle('config:set', (_event, partial) => {
   const allowed = {};
   if (typeof partial?.terminal === 'string') allowed.terminal = partial.terminal;
   if (typeof partial?.voice === 'string' && VOICES[partial.voice]) allowed.voice = partial.voice;
+  if (typeof partial?.theme === 'string' && THEMES[partial.theme]) allowed.theme = partial.theme;
+  if (Number.isFinite(partial?.panelScale)) allowed.panelScale = clampScale(partial.panelScale);
+  if (typeof partial?.muted === 'boolean') allowed.muted = partial.muted;
+  if (typeof partial?.ttsEnabled === 'boolean') allowed.ttsEnabled = partial.ttsEnabled;
+  if (typeof partial?.timbre === 'string') allowed.timbre = partial.timbre;
+  for (const key of ['soundVolume', 'voiceVolume']) {
+    if (Number.isFinite(partial?.[key])) allowed[key] = Math.min(100, Math.max(0, Math.round(partial[key])));
+  }
+  if (partial?.typeVolumes && typeof partial.typeVolumes === 'object') {
+    allowed.typeVolumes = { ...managerConfig.typeVolumes, ...partial.typeVolumes };
+  }
   if (Number.isFinite(partial?.tokenBudgetDaily)) {
     allowed.tokenBudgetDaily = Math.max(0, Math.round(partial.tokenBudgetDaily));
   }
@@ -440,6 +496,7 @@ ipcMain.handle('config:set', (_event, partial) => {
     log(`config save failed: ${error}`);
   }
   sendState();
+  if (allowed.panelScale && overlayMode === 'panel') showOverlay('panel', { focus: true });
   // Speaking the sample also pulls the model when it is not there yet.
   if (allowed.voice) tts.speak('Voz trocada. Agora eu falo assim!', { voice: allowed.voice });
   return managerConfig;
@@ -645,6 +702,21 @@ ipcMain.handle('inbound:set', (_event, value) => {
   return readInboundPolicy(next);
 });
 
+// Read once, then forget: a note left by a version that never came back would
+// otherwise be spoken on every launch.
+function announceUpdateIfJustInstalled() {
+  let mark = null;
+  try {
+    mark = JSON.parse(fs.readFileSync(updateNoticeFile, 'utf8'));
+    fs.rmSync(updateNoticeFile, { force: true });
+  } catch {
+    return;
+  }
+  if (!shouldAnnounce(mark, app.getVersion()) || !managerConfig.ttsEnabled) return;
+  const volume = Math.round((managerConfig.voiceVolume * managerConfig.soundVolume) / 100);
+  tts.speak(UPDATE_DONE_PHRASE, { voice: managerConfig.voice, volume });
+}
+
 function hydrateRegistry() {
   try {
     registry.hydrate(JSON.parse(fs.readFileSync(sessionsFile, 'utf8')));
@@ -685,6 +757,7 @@ app.whenReady().then(() => {
     ),
   );
   tts.watchDownloads(() => sendState());
+  announceUpdateIfJustInstalled();
   ensureHooksInstalled();
   hydrateRegistry();
   reapDeadSessions();

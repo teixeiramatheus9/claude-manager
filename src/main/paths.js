@@ -7,4 +7,5 @@ export const stateFile = path.join(configDir, 'state.json');
 export const sessionsFile = path.join(configDir, 'sessions.json');
 export const configFile = path.join(configDir, 'config.json');
 export const usageFile = path.join(configDir, 'usage.json');
+export const updateNoticeFile = path.join(configDir, 'update-notice.json');
 export const logFile = path.join(configDir, 'log');

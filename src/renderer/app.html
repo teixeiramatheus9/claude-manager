@@ -39,6 +39,104 @@
         --knob: #e6edf3;
       }
 
+      body[data-theme='ambar'] {
+        --bg-surface: #13100b;
+        --bg-header: #18140e;
+        --bg-footer: #100d09;
+        --border: #2b2419;
+        --hairline: #1e1911;
+        --track: #30281c;
+        --text: #f3eee6;
+        --text-2: #d9c7af;
+        --text-3: #be9f74;
+        --muted: #a37e4c;
+        --dim: #685131;
+        --knob: #f3eee6;
+        --accent: #f4b765;
+        --warn: #d45d52;
+      }
+      body[data-theme='magenta'] {
+        --bg-surface: #140f17;
+        --bg-header: #19131d;
+        --bg-footer: #110d13;
+        --border: #2e2234;
+        --hairline: #1f1724;
+        --track: #33263a;
+        --text: #eee8f1;
+        --text-2: #c9b6d2;
+        --text-3: #a181b1;
+        --muted: #815c93;
+        --dim: #523b5e;
+        --knob: #eee8f1;
+        --accent: #e279c4;
+        --warn: #ca9c3e;
+      }
+      body[data-theme='ciano'] {
+        --bg-surface: #0d1416;
+        --bg-header: #10191c;
+        --bg-footer: #0b1112;
+        --border: #1e2e32;
+        --hairline: #141f22;
+        --track: #213338;
+        --text: #e8f0f1;
+        --text-2: #b5d0d3;
+        --text-3: #7faeb3;
+        --muted: #599096;
+        --dim: #395c60;
+        --knob: #e8f0f1;
+        --accent: #7fd2db;
+        --warn: #ca9c3e;
+      }
+      body[data-theme='mono'] {
+        --bg-surface: #111213;
+        --bg-header: #151617;
+        --bg-footer: #0e0f10;
+        --border: #27292b;
+        --hairline: #1b1c1d;
+        --track: #2b2e30;
+        --text: #ebecee;
+        --text-2: #c0c4c8;
+        --text-3: #93999f;
+        --muted: #70787f;
+        --dim: #484d51;
+        --knob: #ebecee;
+        --accent: #e7edf3;
+        --warn: #ca9c3e;
+      }
+
+      body[data-theme='magma'] {
+        --bg-surface: #110b0b;
+        --bg-header: #150e0e;
+        --bg-footer: #0e0909;
+        --border: #271919;
+        --hairline: #1a1111;
+        --track: #2b1c1c;
+        --text: #f2e8e7;
+        --text-2: #d5b6b3;
+        --text-3: #b6817c;
+        --muted: #995c56;
+        --dim: #623b37;
+        --knob: #f2e8e7;
+        --accent: #ed726e;
+        --warn: #ca9c3e;
+      }
+      body[data-theme='matrix'] {
+        --bg-surface: #0b110d;
+        --bg-header: #0e1510;
+        --bg-footer: #090e0b;
+        --border: #19271e;
+        --hairline: #111a14;
+        --track: #1c2b21;
+        --text: #e8f1eb;
+        --text-2: #b5d3be;
+        --text-3: #80b28f;
+        --muted: #5a956c;
+        --dim: #396045;
+        --knob: #e8f1eb;
+        --accent: #7bd599;
+        --warn: #ca9c3e;
+      }
+
       @keyframes pulse {
         0%,
         100% {
@@ -130,6 +228,7 @@
         -webkit-app-region: drag;
       }
       #core {
+        color: var(--accent);
         -webkit-app-region: no-drag;
         position: absolute;
         inset: 0;
@@ -232,6 +331,7 @@
 
       /* --- panel --- */
       #panel {
+        position: relative;
         display: none;
         flex-direction: column;
         flex: 1;
@@ -243,6 +343,9 @@
         border-radius: 8px;
         overflow: hidden;
         box-sizing: border-box;
+      }
+      #panel header svg {
+        color: var(--accent);
       }
       #panel header {
         display: flex;
@@ -504,6 +607,7 @@
       }
       #usage-line {
         flex: 1;
+        padding-right: 14px;
         text-align: right;
         font-size: 11.5px;
         color: var(--dim);
@@ -602,7 +706,7 @@
       input[type='range']::-webkit-slider-runnable-track {
         height: 4px;
         background:
-          linear-gradient(var(--accent) 0 0) 0 / var(--pct, 50%) 100% no-repeat,
+          linear-gradient(var(--accent) 0 0) 0 / var(--pct, 0%) 100% no-repeat,
           var(--track);
       }
       input[type='range']::-webkit-slider-thumb {
@@ -756,12 +860,12 @@
       <div id="bubble">
         <div id="core">
           <svg width="26" height="26" viewBox="0 0 11 11" shape-rendering="crispEdges">
-            <rect x="1" y="1" width="2" height="2" fill="#7aa2f7" />
-            <rect x="3" y="3" width="2" height="2" fill="#7aa2f7" />
-            <rect x="5" y="5" width="2" height="2" fill="#7aa2f7" />
-            <rect x="3" y="7" width="2" height="2" fill="#7aa2f7" />
-            <rect x="1" y="9" width="2" height="2" fill="#7aa2f7" />
-            <rect class="cursor-blink" x="8" y="9" width="3" height="2" fill="#7aa2f7" />
+            <rect x="1" y="1" width="2" height="2" fill="currentColor" />
+            <rect x="3" y="3" width="2" height="2" fill="currentColor" />
+            <rect x="5" y="5" width="2" height="2" fill="currentColor" />
+            <rect x="3" y="7" width="2" height="2" fill="currentColor" />
+            <rect x="1" y="9" width="2" height="2" fill="currentColor" />
+            <rect class="cursor-blink" x="8" y="9" width="3" height="2" fill="currentColor" />
           </svg>
         </div>
         <span id="badge"></span>
@@ -780,12 +884,12 @@
     <div id="panel">
       <header>
         <svg width="14" height="14" viewBox="0 0 11 11" shape-rendering="crispEdges">
-          <rect x="1" y="1" width="2" height="2" fill="#7aa2f7" />
-          <rect x="3" y="3" width="2" height="2" fill="#7aa2f7" />
-          <rect x="5" y="5" width="2" height="2" fill="#7aa2f7" />
-          <rect x="3" y="7" width="2" height="2" fill="#7aa2f7" />
-          <rect x="1" y="9" width="2" height="2" fill="#7aa2f7" />
-          <rect x="8" y="9" width="3" height="2" fill="#7aa2f7" />
+          <rect x="1" y="1" width="2" height="2" fill="currentColor" />
+          <rect x="3" y="3" width="2" height="2" fill="currentColor" />
+          <rect x="5" y="5" width="2" height="2" fill="currentColor" />
+          <rect x="3" y="7" width="2" height="2" fill="currentColor" />
+          <rect x="1" y="9" width="2" height="2" fill="currentColor" />
+          <rect x="8" y="9" width="3" height="2" fill="currentColor" />
         </svg>
         <h1>claude-manager</h1>
         <span id="header-path">~/.claude/sessions</span>
@@ -806,6 +910,11 @@
             <option value="cristal">cristal</option>
             <option value="grave">grave</option>
           </select></span>
+        </label>
+        <label class="setting-row">
+          <span>voz</span>
+          <input id="voice-volume" type="range" min="0" max="100" />
+          <span class="slider-value" data-for="voice-volume"></span>
         </label>
         <div class="setting-subtitle"># volume por tipo</div>
         <label class="setting-row type-row">
@@ -832,6 +941,16 @@
           <span>falar notificações (tts)</span>
           <input id="tts" type="checkbox" />
           <span id="tts-state">[off]</span>
+        </label>
+        <div class="setting-subtitle"># aparência</div>
+        <label class="setting-row">
+          <span>tema</span>
+          <span class="sel"><select id="theme"></select></span>
+        </label>
+        <label class="setting-row">
+          <span>tamanho</span>
+          <input id="panel-scale" type="range" />
+          <span class="slider-value" data-for="panel-scale"></span>
         </label>
         <div class="setting-subtitle"># terminal e voz</div>
         <label class="setting-row">

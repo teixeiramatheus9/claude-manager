@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DEFAULT_VOICE, VOICES, installVoice, isVoiceInstalled, voicePaths } from './sherpa-installer.js';
+import { applyGain } from './wav-gain.js';
 import { configDir } from './paths.js';
 import { log } from './log.js';
 
@@ -34,15 +35,17 @@ export function stopSpeaking() {
 }
 
 // The system voice covers the gap while a model downloads.
-function speakWithSystemVoice(text, spawnFn, useVoiceFlag = true) {
+function speakWithSystemVoice(text, spawnFn, volume = 100, useVoiceFlag = true) {
+  // `say` takes the volume inline; spd-say wants -100..100.
+  const spoken = darwin && volume < 100 ? `[[volm ${(volume / 100).toFixed(2)}]]${text}` : text;
   const [command, args] = darwin
-    ? ['say', useVoiceFlag ? ['-v', 'Luciana', '--', text] : ['--', text]]
-    : ['spd-say', ['-l', 'pt-BR', '--', text]];
+    ? ['say', useVoiceFlag ? ['-v', 'Luciana', '--', spoken] : ['--', spoken]]
+    : ['spd-say', ['-l', 'pt-BR', '-i', String(Math.round(volume * 2 - 100)), '--', text]];
   const child = spawnFn(command, args, { stdio: 'ignore' });
   child.on('error', (error) => log(`${command} failed: ${error}`));
   if (darwin && useVoiceFlag) {
     child.on('exit', (code, signal) => {
-      if (code !== 0 && code !== null && !signal) speakWithSystemVoice(text, spawnFn, false);
+      if (code !== 0 && code !== null && !signal) speakWithSystemVoice(text, spawnFn, volume, false);
     });
   }
   processes = [child];
@@ -50,7 +53,7 @@ function speakWithSystemVoice(text, spawnFn, useVoiceFlag = true) {
 
 // sherpa-onnx has no raw-audio streaming mode, so it renders a wav and the
 // system player plays it.
-export function speakNeural(text, voiceId, spawnFn = spawn) {
+export function speakNeural(text, voiceId, spawnFn = spawn, volume = 100) {
   const { binary, libDir, args } = voicePaths(sherpaDir, voiceId);
   const wavFile = path.join(os.tmpdir(), 'claude-manager-tts.wav');
   const synth = spawnFn(
@@ -62,6 +65,13 @@ export function speakNeural(text, voiceId, spawnFn = spawn) {
   synth.on('error', (error) => log(`sherpa failed: ${error}`));
   synth.on('exit', (code, signal) => {
     if (code !== 0 || signal) return;
+    if (volume < 100) {
+      try {
+        fs.writeFileSync(wavFile, applyGain(fs.readFileSync(wavFile), volume));
+      } catch (error) {
+        log(`gain failed: ${error}`);
+      }
+    }
     const player = spawnFn(darwin ? 'afplay' : 'aplay', darwin ? [wavFile] : ['-q', wavFile], {
       stdio: 'ignore',
     });
@@ -92,14 +102,21 @@ function ensureVoiceInBackground(voiceId) {
 
 export function speak(
   text,
-  { voice = DEFAULT_VOICE, spawnFn = spawn, installed = null, ensureFn = ensureVoiceInBackground } = {},
+  {
+    voice = DEFAULT_VOICE,
+    volume = 100,
+    spawnFn = spawn,
+    installed = null,
+    ensureFn = ensureVoiceInBackground,
+  } = {},
 ) {
+  if (volume <= 0) return;
   const voiceId = VOICES[voice] ? voice : DEFAULT_VOICE;
   const ready = installed ?? isVoiceInstalled(sherpaDir, voiceId);
   if (ready) {
-    speakNeural(text, voiceId, spawnFn);
+    speakNeural(text, voiceId, spawnFn, volume);
     return;
   }
-  speakWithSystemVoice(text, spawnFn);
+  speakWithSystemVoice(text, spawnFn, volume);
   ensureFn(voiceId);
 }

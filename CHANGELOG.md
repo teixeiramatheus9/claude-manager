@@ -10,7 +10,16 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 
 ## Não lançado
 
+### Feats
+- Sete temas de cor (azul-aço, âmbar crt, magenta synth, ciano gelo, monocromo, magma reator, matrix code), com o logo acompanhando a cor de cada um
+- Tamanho do painel ajustável de 80% a 160% — a fonte e os controles crescem junto, não só a janela
+- Volume próprio para a voz do gerente, multiplicado pelo volume geral
+- O gerente avisa por voz quando termina de se atualizar
+
 ### Fixes
+- Ajustes de som (volume, timbre, mudo, TTS) voltam a valer na hora: eles moravam em cada janela, e quem toca o som é a bolinha enquanto quem configura é o painel
+- Prévia de som toca com o volume recém-escolhido, em vez do valor anterior
+- Barra dos sliders para de mostrar um valor diferente do botão em controles que não começam no zero
 - Atualização mostra que está instalando (e avisa da senha) em vez de continuar oferecendo o download; no Linux o app sai da frente pro diálogo de autenticação do sistema, que antes ficava atrás do overlay e impedia digitar a senha
 - Instalação das vozes neurais não depende mais do bzip2 do sistema — a descompressão agora é feita pelo próprio app (corrige voz robótica em máquinas sem bzip2)
 
