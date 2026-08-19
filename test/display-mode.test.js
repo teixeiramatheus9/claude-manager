@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveDisplayMode } from '../src/main/display-mode.js';
+import { resolveDisplayMode, shouldRelaunchUnderX11 } from '../src/main/display-mode.js';
 
 describe('display mode', () => {
   it('is managed when the x11 switch was passed and a display exists', () => {
@@ -71,5 +71,33 @@ describe('input injection', () => {
 
   it('is refused without a display', () => {
     expect(resolveDisplayMode({ display: '', ozonePlatform: 'x11', sessionType: 'x11' }).canInjectInput).toBe(false);
+  });
+});
+
+// Chromium populates the ozone-platform switch with the platform it
+// auto-selected, so getSwitchValue reports "wayland" and hasSwitch reports true
+// even when the flag was never passed (verified by probe). Only process.argv
+// tells whether somebody actually chose it — hence switchPassed.
+describe('relaunching under x11', () => {
+  const base = { display: ':0', platform: 'wayland', switchPassed: false, alreadyRelaunched: false };
+
+  it('relaunches when running on wayland and nobody passed the flag', () => {
+    expect(shouldRelaunchUnderX11(base)).toBe(true);
+  });
+
+  it('does not relaunch twice', () => {
+    expect(shouldRelaunchUnderX11({ ...base, alreadyRelaunched: true })).toBe(false);
+  });
+
+  it('does not relaunch when the flag was actually passed', () => {
+    expect(shouldRelaunchUnderX11({ ...base, switchPassed: true })).toBe(false);
+  });
+
+  it('does not relaunch without a display to relaunch into', () => {
+    expect(shouldRelaunchUnderX11({ ...base, display: '' })).toBe(false);
+  });
+
+  it('does not relaunch when already on x11', () => {
+    expect(shouldRelaunchUnderX11({ ...base, platform: 'x11' })).toBe(false);
   });
 });

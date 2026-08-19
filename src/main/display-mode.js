@@ -22,3 +22,21 @@ export function resolveDisplayMode({ display, ozonePlatform, sessionType }) {
     ? { platform: 'wayland', managed: false, canInjectInput }
     : { platform: 'x11', managed: true, canInjectInput };
 }
+
+// build.linux.executableArgs never reaches the AppImage: the AppRun that
+// electron-builder generates only forwards --no-sandbox. A packaged download
+// would therefore lose XWayland silently — no overlay, no drag, no persisted
+// position. Chromium reads the switch before main.js runs, so the only way to
+// guarantee it on every launch path (AppImage, deb, rpm, `electron .`) is to
+// relaunch once with it.
+//
+// switchPassed MUST come from process.argv, not from the command-line store:
+// Chromium populates ozone-platform with whatever platform it auto-selected, so
+// getSwitchValue returns "wayland" and hasSwitch returns true even when nobody
+// passed the flag. Only argv distinguishes "chosen" from "defaulted".
+export function shouldRelaunchUnderX11({ display, platform, switchPassed, alreadyRelaunched }) {
+  if (alreadyRelaunched) return false;
+  if (switchPassed) return false; // an explicit choice, either way, is honoured
+  if (!display) return false; // nothing to relaunch into
+  return platform === 'wayland'; // already on x11 means nothing to gain
+}

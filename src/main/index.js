@@ -17,7 +17,7 @@ import { TokenBudget } from './token-budget.js';
 import { focusChatTab, sendReplyToWarp, answerQuestionInWarp } from './warp.js';
 import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir } from './paths.js';
 import { log } from './log.js';
-import { resolveDisplayMode } from './display-mode.js';
+import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
 import { readSessionChannel } from './cc-sessions.js';
 import { sendUserMessage } from './cc-peer.js';
 
@@ -37,6 +37,28 @@ const displayMode = resolveDisplayMode({
   sessionType: process.env.XDG_SESSION_TYPE,
 });
 const canPositionWindows = displayMode.managed;
+
+// The AppImage launcher drops build.linux.executableArgs, so a packaged run can
+// arrive here without the switch and silently lose the overlay. Relaunch once
+// with it; the env marker is inherited by the new process and stops any loop.
+const OZONE_RELAUNCH_MARKER = 'CLAUDE_MANAGER_OZONE_RELAUNCHED';
+
+function relaunchUnderX11IfNeeded() {
+  const needed = shouldRelaunchUnderX11({
+    display: process.env.DISPLAY,
+    platform: displayMode.platform,
+    // argv, not the command-line store: Chromium fills ozone-platform in with
+    // the platform it picked, so the store cannot tell chosen from defaulted.
+    switchPassed: process.argv.some((arg) => arg.startsWith('--ozone-platform')),
+    alreadyRelaunched: Boolean(process.env[OZONE_RELAUNCH_MARKER]),
+  });
+  if (!needed) return false;
+  log('relaunching with --ozone-platform=x11 (the launcher did not pass it)');
+  process.env[OZONE_RELAUNCH_MARKER] = '1';
+  app.relaunch({ args: [...process.argv.slice(1), '--ozone-platform=x11'] });
+  app.exit(0);
+  return true;
+}
 
 // Associates the running window with the installed .desktop entry so desktop
 // environments show the right icon/name for packaged builds.
@@ -528,6 +550,7 @@ function scheduleSessionsSave() {
 }
 
 app.whenReady().then(() => {
+  if (relaunchUnderX11IfNeeded()) return;
   log(
     `display mode: platform=${displayMode.platform} managed=${displayMode.managed} `.concat(
       `canInjectInput=${displayMode.canInjectInput}`,
