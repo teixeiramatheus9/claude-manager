@@ -146,9 +146,14 @@ jobs:
           PREVIOUS=$(git tag -l 'v*' --sort=-v:refname | grep -vx "$VERSION" | head -n1)
           NOTES=""
           if [ -n "$PREVIOUS" ]; then
-            # only entry bullets and their section headings — never the file
-            # header, instructions or version headings
-            NOTES=$(git diff "$PREVIOUS".."$VERSION" -- CHANGELOG.md | grep '^+' | grep -v '^+++' | sed 's/^+//' | grep -E '^(- |### )')
+            # only entry bullets and section headings (never the file header
+            # or instructions), and only lines that are genuinely NEW — a
+            # line both removed and added was just moved around the file
+            # (e.g. reorganizing "Não lançado" under a version heading)
+            DIFF=$(git diff "$PREVIOUS".."$VERSION" -- CHANGELOG.md)
+            printf '%s\n' "$DIFF" | grep '^+' | grep -v '^+++' | sed 's/^+//' | grep -E '^(- |### )' > /tmp/added.txt || true
+            printf '%s\n' "$DIFF" | grep '^-' | grep -v '^---' | sed 's/^-//' | grep -E '^(- |### )' > /tmp/removed.txt || true
+            NOTES=$(grep -Fxv -f /tmp/removed.txt /tmp/added.txt || true)
           fi
           if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
             NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" -f tag_name="$VERSION" --jq .body)
