@@ -12,6 +12,8 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 
 ### Feats
 - Seletor de voz do gerente: Santa ou Faber, nas configurações e nos dois sistemas — as duas vozes agora rodam no mesmo motor neural (sherpa-onnx), aposentando o Piper
+- Botão "Buscar versão mais recente" nas configurações; no deb/rpm a atualização agora instala direto pelo app (autenticação nativa do sistema) — sem desinstalar/reinstalar
+- Pipeline de release com um job por pacote (AppImage, deb, rpm, macOS), com retry/timeout no apt e publicação parcial — um alvo travado não segura mais a release
 
 ## v0.2.1 — 2026-08-19
 

@@ -606,14 +606,40 @@ function renderUpdateBanner(update) {
     return;
   }
   updateBanner.classList.remove('hidden');
-  if (update.ready) {
+  if (update.installing) {
+    updateBanner.textContent = `⏳ instalando v${update.available}… (confirma a senha se o sistema pedir)`;
+  } else if (update.ready) {
     updateBanner.textContent = `🚀 v${update.ready} pronta — reiniciar agora`;
   } else if (update.mode === 'auto') {
     updateBanner.textContent = `⬇️ baixando v${update.available}…`;
   } else {
-    updateBanner.textContent = `🚀 v${update.available} disponível — baixar`;
+    updateBanner.textContent = `🚀 v${update.available} disponível — instalar`;
   }
 }
+
+const updateCheckButton = document.getElementById('update-check');
+const updateCheckFeedback = document.getElementById('update-check-feedback');
+
+updateCheckButton.addEventListener('click', async () => {
+  updateCheckButton.disabled = true;
+  updateCheckFeedback.textContent = 'buscando…';
+  try {
+    const status = await window.manager.checkUpdates();
+    if (status.ready) {
+      updateCheckFeedback.textContent = `v${status.ready} baixada — clica no banner pra reiniciar`;
+    } else if (status.available) {
+      updateCheckFeedback.textContent = `v${status.available} disponível — clica no banner acima`;
+    } else if (status.mode === 'off') {
+      updateCheckFeedback.textContent = 'modo dev — atualização desligada';
+    } else {
+      updateCheckFeedback.textContent = `você já está na mais recente (v${status.currentVersion}) ✓`;
+    }
+  } catch {
+    updateCheckFeedback.textContent = 'não consegui checar agora 😅';
+  } finally {
+    updateCheckButton.disabled = false;
+  }
+});
 
 window.manager.onState((state) => {
   renderUpdateBanner(state.update);

@@ -276,6 +276,30 @@
         width: 15px;
         height: 15px;
       }
+      #update-check {
+        align-self: stretch;
+        background: #292524;
+        border: 1px solid #44403c;
+        border-radius: 8px;
+        color: #e7e5e4;
+        font-size: 12px;
+        padding: 6px 12px;
+        cursor: pointer;
+      }
+      #update-check:hover {
+        border-color: #d97757;
+      }
+      #update-check:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      #update-check-feedback {
+        font-size: 11px;
+        color: #a8a29e;
+      }
+      #update-check-feedback:empty {
+        display: none;
+      }
       .setting-divider {
         height: 1px;
         background: #3b3734;
@@ -677,6 +701,9 @@
             <option value="wezterm">WezTerm</option>
           </select>
         </label>
+        <div class="setting-divider"></div>
+        <button id="update-check">Buscar versão mais recente</button>
+        <div id="update-check-feedback"></div>
         <div class="setting-divider"></div>
         <label class="setting-row">
           <span>Voz</span>

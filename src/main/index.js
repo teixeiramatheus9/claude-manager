@@ -242,6 +242,11 @@ ipcMain.on('message:dismiss', (_event, sessionId) => registry.dismissMessage(ses
 
 ipcMain.on('update:apply', () => updaterHandle.apply());
 
+ipcMain.handle('update:check', async () => {
+  const status = await (updaterHandle.check?.() ?? updateStatus);
+  return { ...status, currentVersion: app.getVersion() };
+});
+
 ipcMain.on('tts:speak', (_event, rawText) => {
   const text = String(rawText ?? '').slice(0, 300);
   if (!text) return;
