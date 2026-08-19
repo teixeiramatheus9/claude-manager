@@ -10,7 +10,8 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 
 ## Não lançado
 
-<!-- adicione as seções ### Feats / ### Fixes conforme necessário -->
+### Feats
+- Seletor de voz do gerente: Santa ou Faber, nas configurações e nos dois sistemas — as duas vozes agora rodam no mesmo motor neural (sherpa-onnx), aposentando o Piper
 
 ## v0.2.1 — 2026-08-19
 

@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { DEFAULT_VOICE } from './sherpa-installer.js';
 
 export const DEFAULT_CONFIG = {
   terminal: 'auto',
+  voice: DEFAULT_VOICE,
   tokenBudgetDaily: 100000,
 };
 

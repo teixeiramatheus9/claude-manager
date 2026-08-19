@@ -31,21 +31,35 @@ npm start               # sobe a bolha
 - 💬 no cabeçalho abre o **chat com o gerente** (Haiku, contexto compacto
   gerado localmente — barato de token). Pergunta "resume o dia", "como tá o X?".
 - 🎚️ configura volume/timbre dos sons, o **terminal usado** (Warp, GNOME
-  Terminal, Kitty, Alacritty, Konsole, Tilix, WezTerm ou Auto) e o **teto
-  diário de tokens** do gerente — estourou o teto (ou barrinha no zero), entra
+  Terminal, Kitty, Alacritty, Konsole, Tilix, WezTerm ou Auto), a **voz do
+  gerente** (Santa ou Faber — neurais, offline, baixadas no primeiro uso) e o
+  **teto diário de tokens** do gerente — estourou o teto (ou barrinha no zero), entra
   o **modo economia**: frases prontas, zero token, até você subir o limite.
   O gasto é medido de verdade (usage reportado pelo próprio `claude` CLI).
 - As sessões sobrevivem a restart (salvas em `sessions.json`).
 - Com o app fechado, os avisos caem em notificação nativa (`notify-send`).
 
 ```bash
-./scripts/install-tts.sh   # voz neural pt-BR (Piper) pro TTS — sem ela, cai no spd-say robótico
 npm run hooks:remove       # desinstala os hooks
 npm run autostart:install  # sobe a bolha junto com o login (Xorg)
 npm run autostart:remove   # remove o autostart
 npm test                   # testes unitários
 ./scripts/simulate-event.sh Stop meu-projeto   # evento falso pra testar
 ```
+
+## Voz do gerente
+
+O TTS é neural e offline, com duas vozes pt-BR rodando no mesmo motor
+(sherpa-onnx) nos dois sistemas — escolha em 🎚️ nas configurações:
+
+| Voz | Modelo | Download |
+|---|---|---|
+| **Santa** | Kokoro (`pm_santa`) | ~350MB |
+| **Faber** | Piper vits (`pt_BR-faber-medium`) | ~85MB |
+
+O app baixa o runtime e o modelo sozinho na primeira fala (ou ao trocar de
+voz), em segundo plano. Enquanto isso não termina, fala pela voz do sistema
+(`spd-say` no Linux, `say` no macOS) e avisa quando a voz boa entra no ar.
 
 ## Empacotamento
 
@@ -67,9 +81,8 @@ pro modo completo.
 Funciona no macOS com o mesmo `npm install && npm run hooks:install && npm start`.
 Diferenças em relação ao Linux:
 
-- TTS neural usa Kokoro (voz "santa" pt-BR) via sherpa-onnx: baixa sozinho
-  (~350MB) na primeira fala, em Macs Apple Silicon. Enquanto baixa (ou em Macs
-  Intel), fala com o `say` nativo (Luciana).
+- Enquanto a voz neural baixa, fala com o `say` nativo (Luciana) em vez do
+  `spd-say`.
 - Notificação com o app fechado sai pelo Centro de Notificações.
 - Foco de chat: no **WaveTerm** o hook captura o bloco da sessão e o app foca
   ele direto via `wsh` — preciso, sem caçar aba. Outros terminais só são

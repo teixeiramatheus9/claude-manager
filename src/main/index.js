@@ -13,6 +13,7 @@ import { fallbackMessage } from './manager-voice.js';
 import { loadConfig, saveConfig } from './config-store.js';
 import { TokenBudget } from './token-budget.js';
 import { terminal, tts } from './platform.js';
+import { VOICES } from './sherpa-installer.js';
 import { setupUpdater } from './updater.js';
 import { socketPath, stateFile, sessionsFile, configFile, usageFile, configDir } from './paths.js';
 import { log } from './log.js';
@@ -246,7 +247,7 @@ ipcMain.on('tts:speak', (_event, rawText) => {
   if (!text) return;
   tts.stopSpeaking();
   try {
-    tts.speak(text);
+    tts.speak(text, { voice: managerConfig.voice });
   } catch (error) {
     log(`tts failed: ${error}`);
   }
@@ -287,11 +288,13 @@ ipcMain.handle('config:get', () => ({
     value,
     label: spec.label,
   })),
+  voices: Object.entries(VOICES).map(([value, spec]) => ({ value, label: spec.label })),
 }));
 
 ipcMain.handle('config:set', (_event, partial) => {
   const allowed = {};
   if (typeof partial?.terminal === 'string') allowed.terminal = partial.terminal;
+  if (typeof partial?.voice === 'string' && VOICES[partial.voice]) allowed.voice = partial.voice;
   if (Number.isFinite(partial?.tokenBudgetDaily)) {
     allowed.tokenBudgetDaily = Math.max(0, Math.round(partial.tokenBudgetDaily));
   }
@@ -302,6 +305,8 @@ ipcMain.handle('config:set', (_event, partial) => {
     log(`config save failed: ${error}`);
   }
   sendState();
+  // Speaking the sample also pulls the model when it is not there yet.
+  if (allowed.voice) tts.speak('Voz trocada. Agora eu falo assim!', { voice: allowed.voice });
   return managerConfig;
 });
 

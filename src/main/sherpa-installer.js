@@ -2,32 +2,69 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-// macOS neural TTS runs on sherpa-onnx (the official Piper macOS build is
-// broken: x86_64 binaries mislabeled as arm64, missing dylibs) with the
-// Kokoro multi-lang model, whose pt-BR "santa" voice is speaker id 44.
-const SHERPA_DIR_NAME = 'sherpa-onnx-v1.13.6-onnxruntime-1.17.1-osx-arm64-shared';
-const SHERPA_RELEASE_URL = `https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.6/${SHERPA_DIR_NAME}.tar.bz2`;
-const VOICE_DIR_NAME = 'kokoro-multi-lang-v1_0';
-const VOICE_URL = `https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/${VOICE_DIR_NAME}.tar.bz2`;
+const SHERPA_VERSION = 'v1.13.6';
+const RELEASE_BASE = `https://github.com/k2-fsa/sherpa-onnx/releases/download/${SHERPA_VERSION}`;
+const MODELS_BASE = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models';
 
-export const KOKORO_SPEAKER_ID = '44';
+// One runtime per platform+arch; the mac arm64 build is the only one whose
+// asset name carries the onnxruntime version.
+const RUNTIMES = {
+  'darwin-arm64': `sherpa-onnx-${SHERPA_VERSION}-onnxruntime-1.17.1-osx-arm64-shared`,
+  'darwin-x64': `sherpa-onnx-${SHERPA_VERSION}-osx-x64-shared`,
+  'linux-x64': `sherpa-onnx-${SHERPA_VERSION}-linux-x64-shared`,
+  'linux-arm64': `sherpa-onnx-${SHERPA_VERSION}-linux-aarch64-shared-cpu`,
+};
 
-export function sherpaPaths(sherpaDir) {
-  const runtime = path.join(sherpaDir, SHERPA_DIR_NAME);
-  const voice = path.join(sherpaDir, VOICE_DIR_NAME);
+export const VOICES = {
+  santa: {
+    label: 'Santa (neural, ~350MB)',
+    dirName: 'kokoro-multi-lang-v1_0',
+    modelFile: 'model.onnx',
+    args: (dir) => [
+      `--kokoro-model=${path.join(dir, 'model.onnx')}`,
+      `--kokoro-voices=${path.join(dir, 'voices.bin')}`,
+      `--kokoro-tokens=${path.join(dir, 'tokens.txt')}`,
+      `--kokoro-data-dir=${path.join(dir, 'espeak-ng-data')}`,
+      '--kokoro-lang=pt-br',
+      '--sid=44',
+    ],
+  },
+  faber: {
+    label: 'Faber (neural, ~85MB)',
+    dirName: 'vits-piper-pt_BR-faber-medium',
+    modelFile: 'pt_BR-faber-medium.onnx',
+    args: (dir) => [
+      `--vits-model=${path.join(dir, 'pt_BR-faber-medium.onnx')}`,
+      `--vits-tokens=${path.join(dir, 'tokens.txt')}`,
+      `--vits-data-dir=${path.join(dir, 'espeak-ng-data')}`,
+    ],
+  },
+};
+
+export const DEFAULT_VOICE = process.platform === 'darwin' ? 'santa' : 'faber';
+
+export function runtimeName(platform = process.platform, arch = process.arch) {
+  return RUNTIMES[`${platform}-${arch}`] ?? null;
+}
+
+export function voicePaths(sherpaDir, voiceId, platform = process.platform, arch = process.arch) {
+  const voice = VOICES[voiceId] ?? VOICES[DEFAULT_VOICE];
+  const runtime = runtimeName(platform, arch);
+  const runtimeDir = runtime ? path.join(sherpaDir, runtime) : null;
+  const voiceDir = path.join(sherpaDir, voice.dirName);
   return {
-    binary: path.join(runtime, 'bin', 'sherpa-onnx-offline-tts'),
-    libDir: path.join(runtime, 'lib'),
-    model: path.join(voice, 'model.onnx'),
-    voices: path.join(voice, 'voices.bin'),
-    tokens: path.join(voice, 'tokens.txt'),
-    dataDir: path.join(voice, 'espeak-ng-data'),
+    runtimeDir,
+    binary: runtimeDir ? path.join(runtimeDir, 'bin', 'sherpa-onnx-offline-tts') : null,
+    libDir: runtimeDir ? path.join(runtimeDir, 'lib') : null,
+    voiceDir,
+    model: path.join(voiceDir, voice.modelFile),
+    args: voice.args(voiceDir),
   };
 }
 
-export function isSherpaInstalled(sherpaDir, existsFn = fs.existsSync) {
-  const { binary, model, voices, tokens } = sherpaPaths(sherpaDir);
-  return existsFn(binary) && existsFn(model) && existsFn(voices) && existsFn(tokens);
+export function isVoiceInstalled(sherpaDir, voiceId, existsFn = fs.existsSync, platform, arch) {
+  const { binary, model } = voicePaths(sherpaDir, voiceId, platform, arch);
+  return Boolean(binary) && existsFn(binary) && existsFn(model);
 }
 
 async function download(url, destination, fetchFn) {
@@ -46,15 +83,17 @@ function extractTarBz2(archive, directory, spawnFn) {
   });
 }
 
-// Downloads the sherpa-onnx runtime and the Kokoro voice into sherpaDir
-// (~350MB total) the first time TTS is used on an arm64 mac.
-export async function installSherpa(sherpaDir, { fetchFn = fetch, spawnFn = spawn } = {}) {
+// Downloads the sherpa-onnx runtime (once) and the chosen voice model.
+export async function installVoice(sherpaDir, voiceId, { fetchFn = fetch, spawnFn = spawn } = {}) {
+  const runtime = runtimeName();
+  if (!runtime) throw new Error(`no sherpa build for ${process.platform}-${process.arch}`);
+  const voice = VOICES[voiceId] ?? VOICES[DEFAULT_VOICE];
   fs.mkdirSync(sherpaDir, { recursive: true });
-  const { binary, model } = sherpaPaths(sherpaDir);
+  const { binary, model } = voicePaths(sherpaDir, voiceId);
 
   for (const [target, url, name] of [
-    [binary, SHERPA_RELEASE_URL, 'runtime.tar.bz2'],
-    [model, VOICE_URL, 'voice.tar.bz2'],
+    [binary, `${RELEASE_BASE}/${runtime}.tar.bz2`, 'runtime.tar.bz2'],
+    [model, `${MODELS_BASE}/${voice.dirName}.tar.bz2`, 'voice.tar.bz2'],
   ]) {
     if (fs.existsSync(target)) continue;
     const archive = path.join(sherpaDir, name);
@@ -62,5 +101,5 @@ export async function installSherpa(sherpaDir, { fetchFn = fetch, spawnFn = spaw
     await extractTarBz2(archive, sherpaDir, spawnFn);
     fs.rmSync(archive, { force: true });
   }
-  return isSherpaInstalled(sherpaDir);
+  return isVoiceInstalled(sherpaDir, voiceId);
 }
