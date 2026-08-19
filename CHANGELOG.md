@@ -10,6 +10,9 @@ Formato dos marcadores: `- descrição curta e clara do que mudou (#PR)`.
 
 ## Não lançado
 
+### Fixes
+- Instalação das vozes neurais não depende mais do bzip2 do sistema — a descompressão agora é feita pelo próprio app (corrige voz robótica em máquinas sem bzip2)
+
 ### Feats
 - Seletor de voz do gerente: Santa ou Faber, nas configurações e nos dois sistemas — as duas vozes agora rodam no mesmo motor neural (sherpa-onnx), aposentando o Piper
 - Botão "Buscar versão mais recente" nas configurações; a atualização agora instala direto pelo app e relança na versão nova — deb/rpm via autenticação nativa do sistema, macOS trocando o app no /Applications automaticamente

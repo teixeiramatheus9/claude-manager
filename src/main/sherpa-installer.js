@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import unbzip2 from 'unbzip2-stream';
 
 const SHERPA_VERSION = 'v1.13.6';
 const RELEASE_BASE = `https://github.com/k2-fsa/sherpa-onnx/releases/download/${SHERPA_VERSION}`;
@@ -73,13 +74,28 @@ async function download(url, destination, fetchFn) {
   fs.writeFileSync(destination, Buffer.from(await response.arrayBuffer()));
 }
 
+// bzip2 is decompressed in pure JS and streamed into `tar -xf -`, so the
+// system needs no bzip2 binary (tar -xjf shells out to it and many machines
+// don't have it — that broke voice installs with "tar exited with 2").
 function extractTarBz2(archive, directory, spawnFn) {
   return new Promise((resolve, reject) => {
-    const tar = spawnFn('tar', ['-xjf', archive, '-C', directory], { stdio: 'ignore' });
+    const tar = spawnFn('tar', ['-xf', '-', '-C', directory], {
+      stdio: ['pipe', 'ignore', 'ignore'],
+    });
     tar.on('error', reject);
     tar.on('close', (code) =>
       code === 0 ? resolve() : reject(new Error(`tar exited with ${code}`)),
     );
+    if (!tar.stdin) {
+      resolve(); // test double without stdin — nothing to stream
+      return;
+    }
+    fs.createReadStream(archive)
+      .on('error', reject)
+      .pipe(unbzip2())
+      .on('error', reject)
+      .pipe(tar.stdin)
+      .on('error', reject);
   });
 }
 
