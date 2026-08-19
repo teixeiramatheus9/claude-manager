@@ -453,6 +453,21 @@ const panelScaleInput = document.getElementById('panel-scale');
 function applyTheme(theme) {
   if (theme) document.body.dataset.theme = theme;
 }
+
+// The tube is orthogonal to the palette: it rides over whichever theme is on.
+const crtCheckbox = document.getElementById('crt');
+const crtState = document.getElementById('crt-state');
+
+function applyCrt(on) {
+  document.body.classList.toggle('crt', Boolean(on));
+  crtCheckbox.checked = Boolean(on);
+  crtState.textContent = on ? '[on]' : '[off]';
+}
+
+crtCheckbox.addEventListener('change', () => {
+  applyCrt(crtCheckbox.checked);
+  window.manager.setConfig({ crt: crtCheckbox.checked });
+});
 for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
@@ -487,6 +502,7 @@ window.manager.getConfig().then((config) => {
   }
   themeSelect.value = config.theme;
   applyTheme(config.theme);
+  applyCrt(config.crt);
   const range = config.panelScaleRange;
   if (range) {
     panelScaleInput.min = String(range.min);
@@ -901,6 +917,7 @@ function applySound(sound) {
 
 window.manager.onState((state) => {
   applyTheme(state.theme);
+  applyCrt(state.crt);
   applySound(state.sound);
   renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);

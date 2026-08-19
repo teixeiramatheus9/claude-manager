@@ -148,6 +148,7 @@ function sendState() {
     theme: managerConfig.theme,
     trayAvailable: Boolean(tray),
     trayNeedsRelogin,
+    crt: managerConfig.crt,
     sound: {
       muted: managerConfig.muted,
       volume: managerConfig.soundVolume,
@@ -566,6 +567,7 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (typeof partial?.voice === 'string' && VOICES[partial.voice]) allowed.voice = partial.voice;
   if (typeof partial?.theme === 'string' && THEMES[partial.theme]) allowed.theme = partial.theme;
   if (Number.isFinite(partial?.panelScale)) allowed.panelScale = clampScale(partial.panelScale);
+  if (typeof partial?.crt === 'boolean') allowed.crt = partial.crt;
   if (typeof partial?.muted === 'boolean') allowed.muted = partial.muted;
   if (typeof partial?.ttsEnabled === 'boolean') allowed.ttsEnabled = partial.ttsEnabled;
   if (typeof partial?.timbre === 'string') allowed.timbre = partial.timbre;
