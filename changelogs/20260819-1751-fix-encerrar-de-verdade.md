@@ -1,0 +1,1 @@
+- Encerrar agora encerra de verdade: os hooks do Claude Code são desregistrados (com o app fechado você não recebe mais notificação de sistema pelo fallback do hook), a voz do gerente para de falar, o `claude -p` em voo é morto (antes só morria no timeout de 15s, continuando a gastar token com o app fechado) e o `manager.sock` é removido em vez de ficar pra trás

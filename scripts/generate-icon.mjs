@@ -13,9 +13,11 @@ const BORDER = 4;
 
 // --- scene ---------------------------------------------------------------
 
-const SURFACE = [13, 17, 23]; // #0D1117
-const BORDER_COLOR = [31, 39, 51]; // #1F2733
-const ACCENT = [122, 162, 247]; // #7AA2F7
+// Same tokens as the monochrome theme (the default one), so the launcher icon
+// and the bubble read as the same product.
+const SURFACE = [17, 18, 19]; // #111213
+const BORDER_COLOR = [39, 41, 43]; // #27292B
+const ACCENT = [231, 237, 243]; // #E7EDF3
 
 // Same 11x11 grid as the logo in the app: chevron plus a cursor block.
 const GRID = 11;

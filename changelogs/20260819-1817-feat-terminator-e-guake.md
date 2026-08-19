@@ -1,0 +1,1 @@
+- Terminator e Guake entram no seletor de terminal — o Guake (drop-down) é invocado automaticamente antes do foco

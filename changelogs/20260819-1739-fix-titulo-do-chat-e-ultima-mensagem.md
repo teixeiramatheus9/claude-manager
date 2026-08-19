@@ -1,0 +1,2 @@
+- O título do chat não vira mais "Tarefa concluída": esse texto genérico vinha do recado de fallback (modo economia ou `claude -p` falhando) e sobrescrevia o assunto do chat, repetindo o que a bolinha e o rótulo de status já dizem
+- O balão do card passa a mostrar a última mensagem real do chat, e não a frase que o gerente inventou — a frase descontraída continua no tooltip e na voz. Antes só o caso de pergunta mostrava texto de verdade

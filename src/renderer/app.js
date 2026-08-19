@@ -67,7 +67,17 @@ badge.addEventListener('click', () => {
 });
 tooltip.addEventListener('click', openPanel);
 document.getElementById('close').addEventListener('click', closePanel);
-document.getElementById('quit').addEventListener('click', () => window.manager.quit());
+const quitButton = document.getElementById('quit');
+quitButton.addEventListener('click', () => window.manager.quit());
+
+// With a tray icon the button parks the app there and the tray menu is what
+// really ends it; without one it stays the only way out, so it says so.
+function renderQuitButton(trayAvailable) {
+  quitButton.textContent = trayAvailable ? '[fechar]' : '[sair]';
+  quitButton.title = trayAvailable
+    ? 'Esconder na bandeja — pra encerrar de vez, usa o ícone lá'
+    : 'Encerrar o Claude Manager';
+}
 
 
 bubble.addEventListener('mousedown', (event) => {
@@ -443,6 +453,21 @@ const panelScaleInput = document.getElementById('panel-scale');
 function applyTheme(theme) {
   if (theme) document.body.dataset.theme = theme;
 }
+
+// The tube is orthogonal to the palette: it rides over whichever theme is on.
+const crtCheckbox = document.getElementById('crt');
+const crtState = document.getElementById('crt-state');
+
+function applyCrt(on) {
+  document.body.classList.toggle('crt', Boolean(on));
+  crtCheckbox.checked = Boolean(on);
+  crtState.textContent = on ? '[on]' : '[off]';
+}
+
+crtCheckbox.addEventListener('change', () => {
+  applyCrt(crtCheckbox.checked);
+  window.manager.setConfig({ crt: crtCheckbox.checked });
+});
 for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
@@ -477,6 +502,7 @@ window.manager.getConfig().then((config) => {
   }
   themeSelect.value = config.theme;
   applyTheme(config.theme);
+  applyCrt(config.crt);
   const range = config.panelScaleRange;
   if (range) {
     panelScaleInput.min = String(range.min);
@@ -733,8 +759,12 @@ function sessionElement(session) {
   // One message balloon per chat — the exact text that went out in the
   // tooltip. A pending question adds its options as compact chips INSIDE
   // the same balloon, never as extra message lines.
+  // A pending question owns the balloon — its text IS the question. Otherwise
+  // the balloon shows what the chat itself last said, and only falls back to
+  // the manager's phrase while that digest has not landed yet.
   const messageText =
-    session.managerMessage ?? (session.status === 'done' ? 'Escrevendo o recado…' : null);
+    (session.question ? session.managerMessage : (session.lastMessage ?? session.managerMessage)) ??
+    (session.status === 'done' ? 'Escrevendo o recado…' : null);
   if (messageText) {
     const balloon = document.createElement('div');
     balloon.className = 'message';
@@ -831,6 +861,17 @@ function renderUpdateBanner(update) {
   updateBanner.disabled = Boolean(update.installing);
 }
 
+const trayStatusLine = document.getElementById('tray-status');
+
+// GNOME picks up a newly installed extension only when the shell starts, so
+// the tray this app just installed can only appear in the next session.
+function renderTrayStatus(needsRelogin) {
+  trayStatusLine.classList.toggle('hidden', !needsRelogin);
+  if (needsRelogin) {
+    trayStatusLine.textContent = '# bandeja instalada — ela aparece no próximo login';
+  }
+}
+
 const voiceStatusLine = document.getElementById('voice-status');
 
 function renderVoiceStatus(voice) {
@@ -876,9 +917,12 @@ function applySound(sound) {
 
 window.manager.onState((state) => {
   applyTheme(state.theme);
+  applyCrt(state.crt);
   applySound(state.sound);
+  renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);
   renderVoiceStatus(state.voiceDownloading);
+  renderTrayStatus(state.trayNeedsRelogin);
   renderUsage(state.tokens);
   renderBadge(state.sessions);
   lastUnreadCount = state.unread;

@@ -139,21 +139,34 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      # The release body is whatever the merged PRs added to CHANGELOG.md
-      # since the previous tag; falls back to auto-generated notes.
+      # The release body is the changelogs/ files ADDED since the previous
+      # tag, in filename order and grouped by the type in the name; falls back
+      # to auto-generated notes. One file per change means no PR ever has to
+      # touch a shared file (see changelogs.md).
       - run: |
           VERSION="v${{ needs.version.outputs.version }}"
           PREVIOUS=$(git tag -l 'v*' --sort=-v:refname | grep -vx "$VERSION" | head -n1)
-          NOTES=""
+          FEATS=""
+          FIXES=""
           if [ -n "$PREVIOUS" ]; then
-            # only entry bullets and section headings (never the file header
-            # or instructions), and only lines that are genuinely NEW — a
-            # line both removed and added was just moved around the file
-            # (e.g. reorganizing "Não lançado" under a version heading)
-            DIFF=$(git diff "$PREVIOUS".."$VERSION" -- CHANGELOG.md)
-            printf '%s\n' "$DIFF" | grep '^+' | grep -v '^+++' | sed 's/^+//' | grep -E '^(- |### )' > /tmp/added.txt || true
-            printf '%s\n' "$DIFF" | grep '^-' | grep -v '^---' | sed 's/^-//' | grep -E '^(- |### )' > /tmp/removed.txt || true
-            NOTES=$(grep -Fxv -f /tmp/removed.txt /tmp/added.txt || true)
+            ADDED=$(git diff --name-only --diff-filter=A "$PREVIOUS".."$VERSION" -- changelogs/ | sort)
+            while IFS= read -r file; do
+              if [ -z "$file" ]; then
+                continue
+              fi
+              BODY=$(git show "$VERSION:$file")
+              case "$(basename "$file")" in
+                *-feat-*) FEATS="${FEATS}${BODY}"$'\n' ;;
+                *)        FIXES="${FIXES}${BODY}"$'\n' ;;
+              esac
+            done <<< "$ADDED"
+          fi
+          NOTES=""
+          if [ -n "$FEATS" ]; then
+            NOTES="### Feats"$'\n'"$FEATS"
+          fi
+          if [ -n "$FIXES" ]; then
+            NOTES="${NOTES}"$'\n'"### Fixes"$'\n'"$FIXES"
           fi
           if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
             NOTES=$(gh api "repos/${{ github.repository }}/releases/generate-notes" -f tag_name="$VERSION" --jq .body)

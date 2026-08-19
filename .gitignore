@@ -2,6 +2,10 @@ node_modules/
 dist/
 *.log
 
+# agent worktrees: full checkouts of this same repo, so they would otherwise be
+# committed AND picked up by the test run (see vitest.config.js)
+.claude/worktrees/
+
 # private working context (kept local only)
 CLAUDE.local.md
 docs/

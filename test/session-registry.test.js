@@ -18,6 +18,24 @@ describe('SessionRegistry', () => {
     expect(session.unread).toBe(false);
   });
 
+  it('keeps the chat subject when the manager has no title to offer', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent(promptEvent());
+    registry.setManagerMessage('s1', { title: 'Corrigir update do rpm', message: 'pronto' });
+    // the fallback voice (economy mode, or a failed claude -p) carries no title
+    registry.setManagerMessage('s1', { message: 'Opa, terminou!' });
+    expect(registry.list()[0].title).toBe('Corrigir update do rpm');
+  });
+
+  it('shows the last assistant message and drops it when the chat works again', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent(promptEvent());
+    registry.setLastMessage('s1', 'Rodei a suíte: 192 testes passando.');
+    expect(registry.list()[0].lastMessage).toBe('Rodei a suíte: 192 testes passando.');
+    registry.applyEvent(promptEvent());
+    expect(registry.list()[0].lastMessage).toBe(null);
+  });
+
   it('marks session done and unread on Stop', () => {
     const registry = new SessionRegistry();
     registry.applyEvent(promptEvent());

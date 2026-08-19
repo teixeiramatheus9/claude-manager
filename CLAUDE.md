@@ -84,8 +84,12 @@ Runtime: `~/.config/claude-manager/` (`manager.sock`, `state.json`,
 - Merge/push na `main` a partir de branch `release/*` = major, `feat/*` =
   minor, `fix/*` = patch (fallback: prefixo do commit). Outros prefixos não
   lançam. O CI tagueia, builda Linux+macOS e publica a release sozinho.
-- **Toda PR de feat/fix/release DEVE atualizar o `CHANGELOG.md`** na seção
-  "Não lançado" (check `changelog` obrigatório) — o texto adicionado desde a
-  última tag vira o corpo da release publicada.
+- **Toda PR de feat/fix/release DEVE adicionar um arquivo em `changelogs/`**
+  (check `changelog` obrigatório), nomeado `AAAAMMDD-HHMM-<feat|fix>-<slug>.md`
+  e contendo só os bullets em pt-BR — ver `changelogs.md`. Um arquivo por
+  mudança, nunca um arquivo compartilhado: é o que evita conflito entre PRs. No
+  corte, a release publica os arquivos **adicionados desde a última tag**, em
+  ordem de nome e agrupados pelo tipo. `CHANGELOG.md` é só histórico até a
+  v0.8.1.
 - Auto-update: AppImage se atualiza via electron-updater (`latest-linux.yml`);
   deb/rpm/dmg mostram banner apontando pra release.

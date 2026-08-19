@@ -136,6 +136,24 @@
         --accent: #7bd599;
         --warn: #ca9c3e;
       }
+      /* Phosphor reads right only when the text is brighter than the accent —
+         on a real tube the glow is the lit dot, not the highlight colour. */
+      body[data-theme='pipboy'] {
+        --bg-surface: #071008;
+        --bg-header: #0a1710;
+        --bg-footer: #050d07;
+        --border: #1c3a24;
+        --hairline: #102616;
+        --track: #1b3d26;
+        --text: #b6ffc9;
+        --text-2: #6fe093;
+        --text-3: #48b06a;
+        --muted: #2f8a4d;
+        --dim: #1e5c34;
+        --knob: #b6ffc9;
+        --accent: #3fff6a;
+        --warn: #ffb642;
+      }
 
       @keyframes pulse {
         0%,
@@ -853,11 +871,170 @@
       #chat-send:hover {
         text-decoration: underline;
       }
+
+      /* --- crt: the tube, orthogonal to the palette ---
+         Overlays live inside each surface, never over the viewport: the window
+         is transparent, so a full-screen scanline layer would paint stripes on
+         the desktop in the gap between the bubble and the toast.
+         Everything animated here is opacity/transform/background-position —
+         compositor work, so an always-on-top window does not burn CPU. */
+      .crt-glass {
+        display: none;
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+        pointer-events: none;
+        border-radius: inherit;
+        overflow: hidden;
+      }
+      body.crt .crt-glass {
+        display: block;
+      }
+      /* Scanlines plus the glass vignette: static, painted once. */
+      .crt-glass::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+          repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.26) 0 1px, transparent 1px 3px),
+          radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.42) 100%);
+      }
+      /* The mains-hum band drifting down the tube, plus the grain and the
+         flicker riding along — different properties, so they can share a layer. */
+      .crt-glass::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 22%;
+        background: linear-gradient(
+          to bottom,
+          transparent,
+          rgba(255, 255, 255, 0.05) 45%,
+          rgba(255, 255, 255, 0.05) 55%,
+          transparent
+        );
+        animation: crt-roll 7.5s linear infinite;
+      }
+      .crt-grain {
+        position: absolute;
+        inset: -20px;
+        opacity: 0.05;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+        animation:
+          crt-grain 0.5s steps(1, end) infinite,
+          crt-flicker 6.3s linear infinite;
+      }
+      @keyframes crt-roll {
+        from {
+          transform: translateY(-120%);
+        }
+        to {
+          transform: translateY(560%);
+        }
+      }
+      @keyframes crt-grain {
+        0% {
+          background-position: 0 0;
+        }
+        25% {
+          background-position: -13px 7px;
+        }
+        50% {
+          background-position: 9px -11px;
+        }
+        75% {
+          background-position: -6px -4px;
+        }
+        100% {
+          background-position: 11px 6px;
+        }
+      }
+      /* Irregular on purpose: an even sine reads as a fade, not as a bad tube. */
+      @keyframes crt-flicker {
+        0%,
+        11%,
+        14%,
+        49%,
+        52%,
+        83%,
+        100% {
+          opacity: 0.05;
+        }
+        12% {
+          opacity: 0.11;
+        }
+        50% {
+          opacity: 0.02;
+        }
+        84% {
+          opacity: 0.12;
+        }
+      }
+      /* Phosphor bloom and the RGB fringe. text-shadow inherits, so one rule on
+         the body lights every glyph in both windows. */
+      body.crt {
+        text-shadow:
+          0.4px 0 rgba(255, 40, 40, 0.32),
+          -0.4px 0 rgba(40, 255, 255, 0.28),
+          0 0 4px currentColor;
+      }
+      /* Curvature only where a misaligned click cannot cost anything: the
+         filter moves pixels, not hit boxes, so scale is capped at 4 — under
+         2px of pull at the corners, less than the padding of the toast
+         buttons. The panel's sliders and selects stay flat. */
+      body.crt #bubble,
+      body.crt #tooltip {
+        filter: url(#crt-barrel);
+      }
+      body.crt #tooltip {
+        position: relative;
+      }
+      /* Inset only. Each surface is sized to its own window, so an outer glow
+         has nowhere to fall off to: the compositor clips it to the window rect
+         and a round bubble ends up sitting on a dark square. */
+      body.crt #panel,
+      body.crt #tooltip,
+      body.crt #bubble {
+        box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .crt-glass::after,
+        .crt-grain {
+          animation: none;
+        }
+      }
     </style>
   </head>
   <body>
+    <!-- Barrel map: R displaces x, G displaces y. The linear ramps alone would
+         only scale the image, so a radial gradient of neutral grey holds the
+         middle still — the deviation then grows with the distance from the
+         centre, which is what makes it a bulge instead of a zoom. -->
+    <svg width="0" height="0" aria-hidden="true" style="position: absolute">
+      <filter id="crt-barrel" color-interpolation-filters="sRGB">
+        <feImage
+          preserveAspectRatio="none"
+          x="0%"
+          y="0%"
+          width="100%"
+          height="100%"
+          result="map"
+          href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='x' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%23000'/%3E%3Cstop offset='1' stop-color='%23f00'/%3E%3C/linearGradient%3E%3ClinearGradient id='y' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23000'/%3E%3Cstop offset='1' stop-color='%230f0'/%3E%3C/linearGradient%3E%3CradialGradient id='m'%3E%3Cstop offset='0' stop-color='%23808080' stop-opacity='1'/%3E%3Cstop offset='1' stop-color='%23808080' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23x)'/%3E%3Crect width='100' height='100' fill='url(%23y)' style='mix-blend-mode:screen'/%3E%3Crect width='100' height='100' fill='url(%23m)'/%3E%3C/svg%3E"
+        />
+        <feDisplacementMap
+          in="SourceGraphic"
+          in2="map"
+          scale="4"
+          xChannelSelector="R"
+          yChannelSelector="G"
+        />
+      </filter>
+    </svg>
     <div id="row">
       <div id="bubble">
+        <div class="crt-glass"><div class="crt-grain"></div></div>
         <div id="core">
           <svg width="26" height="26" viewBox="0 0 11 11" shape-rendering="crispEdges">
             <rect x="1" y="1" width="2" height="2" fill="currentColor" />
@@ -872,6 +1049,7 @@
       </div>
     </div>
     <div id="tooltip">
+        <div class="crt-glass"><div class="crt-grain"></div></div>
         <div id="toast-head">
           <span id="toast-mark">✓</span>
           <span id="tooltip-project"></span>
@@ -882,6 +1060,7 @@
         <div id="tooltip-text"></div>
     </div>
     <div id="panel">
+      <div class="crt-glass"><div class="crt-grain"></div></div>
       <header>
         <svg width="14" height="14" viewBox="0 0 11 11" shape-rendering="crispEdges">
           <rect x="1" y="1" width="2" height="2" fill="currentColor" />
@@ -952,6 +1131,11 @@
           <input id="panel-scale" type="range" />
           <span class="slider-value" data-for="panel-scale"></span>
         </label>
+        <label class="setting-row wide-label">
+          <span>tubo crt (scanline, brilho, curvatura)</span>
+          <input id="crt" type="checkbox" />
+          <span id="crt-state">[off]</span>
+        </label>
         <div class="setting-subtitle"># terminal e voz</div>
         <label class="setting-row">
           <span>terminal</span>
@@ -962,6 +1146,7 @@
           <span class="sel"><select id="voice"></select></span>
         </label>
         <div id="voice-status" class="hidden"></div>
+        <div id="tray-status" class="hidden"></div>
         <div class="setting-subtitle"># resposta rápida no chat</div>
         <label class="setting-row">
           <span>entrega</span>
