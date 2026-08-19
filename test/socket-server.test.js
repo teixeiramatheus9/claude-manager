@@ -4,7 +4,14 @@ import fs from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { startSocketServer, stopSocketServer } from '../src/main/socket-server.js';
+import { isPipePath, startSocketServer, stopSocketServer } from '../src/main/socket-server.js';
+
+// Named pipes are the win32 transport; a fresh name per test avoids collisions.
+function testSocketPath(dir, name) {
+  return process.platform === 'win32'
+    ? `\\\\.\\pipe\\cm-test-${name}-${process.pid}-${Math.random().toString(36).slice(2)}`
+    : path.join(dir, name);
+}
 
 function sendLines(socketFile, payload) {
   return new Promise((resolve, reject) => {
@@ -19,7 +26,7 @@ const waitTick = () => new Promise((resolve) => setTimeout(resolve, 50));
 describe('socket server', () => {
   it('parses one JSON event per line', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-server-'));
-    const socketFile = path.join(dir, 'srv.sock');
+    const socketFile = testSocketPath(dir, 'srv.sock');
     const onEvent = vi.fn();
     const server = startSocketServer(socketFile, onEvent, () => {});
     await new Promise((resolve) => server.on('listening', resolve));
@@ -34,7 +41,7 @@ describe('socket server', () => {
 
   it('skips malformed lines and keeps going', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-server-'));
-    const socketFile = path.join(dir, 'srv.sock');
+    const socketFile = testSocketPath(dir, 'srv.sock');
     const onEvent = vi.fn();
     const logFn = vi.fn();
     const server = startSocketServer(socketFile, onEvent, logFn);
@@ -50,7 +57,7 @@ describe('socket server', () => {
 
   it('replaces a stale socket file on startup', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-server-'));
-    const socketFile = path.join(dir, 'srv.sock');
+    const socketFile = testSocketPath(dir, 'srv.sock');
     const first = startSocketServer(socketFile, () => {}, () => {});
     await new Promise((resolve) => first.on('listening', resolve));
     await new Promise((resolve) => first.close(resolve));
@@ -63,7 +70,8 @@ describe('socket server', () => {
     second.close();
   });
 
-  it('takes the socket file down with it on quit', async () => {
+  // Unix-socket-only semantics: pipes never touch the filesystem.
+  it.skipIf(process.platform === 'win32')('takes the socket file down with it on quit', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-server-'));
     const socketFile = path.join(dir, 'quit.sock');
     const server = startSocketServer(socketFile, () => {}, () => {});
@@ -71,5 +79,25 @@ describe('socket server', () => {
     expect(fs.existsSync(socketFile)).toBe(true);
     stopSocketServer(server, socketFile);
     expect(fs.existsSync(socketFile)).toBe(false);
+  });
+
+  it('never touches the filesystem for a pipe endpoint', () => {
+    const unlink = vi.spyOn(fs, 'unlinkSync');
+    const mkdir = vi.spyOn(fs, 'mkdirSync');
+    stopSocketServer(null, '\\\\.\\pipe\\claude-manager-u');
+    expect(unlink).not.toHaveBeenCalled();
+    expect(mkdir).not.toHaveBeenCalled();
+    unlink.mockRestore();
+    mkdir.mockRestore();
+  });
+});
+
+describe('isPipePath', () => {
+  it('recognizes win32 named pipes', () => {
+    expect(isPipePath('\\\\.\\pipe\\claude-manager-u')).toBe(true);
+  });
+  it('rejects filesystem paths', () => {
+    expect(isPipePath('/home/u/.config/claude-manager/manager.sock')).toBe(false);
+    expect(isPipePath('C:\\Users\\u\\.config\\manager.sock')).toBe(false);
   });
 });

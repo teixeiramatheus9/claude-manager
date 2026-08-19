@@ -2,12 +2,19 @@ import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 
+// win32 named pipes live in the pipe namespace: nothing to mkdir or unlink.
+export function isPipePath(socketPath) {
+  return socketPath.startsWith('\\\\.\\pipe\\');
+}
+
 export function startSocketServer(socketPath, onEvent, log) {
-  fs.mkdirSync(path.dirname(socketPath), { recursive: true });
-  try {
-    fs.unlinkSync(socketPath);
-  } catch {
-    // no stale socket, fine
+  if (!isPipePath(socketPath)) {
+    fs.mkdirSync(path.dirname(socketPath), { recursive: true });
+    try {
+      fs.unlinkSync(socketPath);
+    } catch {
+      // no stale socket, fine
+    }
   }
 
   const server = net.createServer((socket) => {
@@ -44,9 +51,11 @@ export function stopSocketServer(server, socketPath) {
   } catch {
     // never listened
   }
-  try {
-    fs.unlinkSync(socketPath);
-  } catch {
-    // already gone
+  if (!isPipePath(socketPath)) {
+    try {
+      fs.unlinkSync(socketPath);
+    } catch {
+      // already gone
+    }
   }
 }
