@@ -68,6 +68,27 @@ essa dependência; no AppImage, instala na mão (Fedora:
 `sudo dnf install xdotool`; Ubuntu: `sudo apt install xdotool`). Esse fallback
 só alcança terminais rodando em X11/XWayland.
 
+## macOS
+
+Funciona no macOS com o mesmo `npm install && npm run hooks:install && npm start`.
+Diferenças em relação ao Linux:
+
+- TTS neural usa Kokoro (voz "santa" pt-BR) via sherpa-onnx: baixa sozinho
+  (~350MB) na primeira fala, em Macs Apple Silicon. Enquanto baixa (ou em Macs
+  Intel), fala com o `say` nativo (Luciana).
+- Notificação com o app fechado sai pelo Centro de Notificações.
+- Foco de chat: no **WaveTerm** o hook captura o bloco da sessão e o app foca
+  ele direto via `wsh` — preciso, sem caçar aba. Outros terminais só são
+  ativados (sem foco de aba).
+- Resposta rápida e chips digitam via System Events: dê permissão de
+  **Acessibilidade** ao app (Ajustes do Sistema → Privacidade e Segurança →
+  Acessibilidade → Electron/Claude Manager). Sem a permissão, a resposta cai
+  no clipboard.
+- `npm run autostart:install` cria um LaunchAgent em `~/Library/LaunchAgents`.
+- `npm run dist:mac` gera o `.dmg` em `dist/`. O app não é assinado: na
+  primeira abertura use botão direito → Abrir (ou
+  `xattr -dr com.apple.quarantine "/Applications/Claude Manager.app"`).
+
 ## Sandbox do Electron no Ubuntu 24+
 
 O Ubuntu restringe user namespaces sem privilégio, então o Electron aborta com

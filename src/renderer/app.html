@@ -192,6 +192,25 @@
         background: rgba(255, 255, 255, 0.15);
         opacity: 1;
       }
+      #update-banner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        border: none;
+        background: linear-gradient(135deg, #d97757, #b45309);
+        color: #fff;
+        font: 600 12px system-ui, sans-serif;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+      #update-banner:hover {
+        filter: brightness(1.1);
+      }
+      #update-banner.hidden {
+        display: none;
+      }
       #settings-pop {
         background: #292524;
         border-bottom: 1px solid #3b3734;
@@ -613,6 +632,7 @@
           </button>
         </div>
       </header>
+      <button id="update-banner" class="hidden"></button>
       <div id="settings-pop" class="hidden">
         <label class="setting-row">
           <span>Volume geral</span>

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('manager', {
   setMode: (mode) => ipcRenderer.send('ui:mode', mode),
   panelOpened: () => ipcRenderer.send('panel:opened'),
   dismissMessage: (sessionId) => ipcRenderer.send('message:dismiss', sessionId),
+  applyUpdate: () => ipcRenderer.send('update:apply'),
   dragStart: () => ipcRenderer.send('drag:start'),
   dragEnd: () => ipcRenderer.send('drag:end'),
   focusSession: (sessionId) => ipcRenderer.invoke('warp:focus', sessionId),
