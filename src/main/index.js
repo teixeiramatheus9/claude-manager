@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { ensureHooks, removeAppHooks } from '../../scripts/install-hooks.js';
 import { SessionRegistry } from './session-registry.js';
 import { startSocketServer, stopSocketServer } from './socket-server.js';
-import { readTranscriptSnapshot } from './transcript.js';
+import { readConversationTail, readTranscriptSnapshot } from './transcript.js';
 import { generateManagerMessage, humanizeNotification } from './manager-voice.js';
 import { digestMessage } from './message-digest.js';
 import { askManager, findMentionedSession } from './manager-chat.js';
@@ -627,6 +627,14 @@ async function huntSessionTab(session) {
 ipcMain.handle('warp:focus', (_event, sessionId) => {
   const session = registry.sessions.get(sessionId);
   return huntSessionTab(session);
+});
+
+// The mirror view: the conversation this chat had, straight from its
+// transcript — same file the Stop handler already reads, so no new source.
+ipcMain.handle('transcript:tail', async (_event, sessionId) => {
+  const session = registry.sessions.get(sessionId);
+  if (!session?.transcriptPath) return [];
+  return readConversationTail(session.transcriptPath);
 });
 
 ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {

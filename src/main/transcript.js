@@ -68,6 +68,55 @@ export function parsePendingQuestion(jsonlText) {
   return null;
 }
 
+// The conversation as the user had it: their prompts and the assistant's
+// prose, nothing else. Tool traffic, sidechains (subagents write into the same
+// file), injected meta prompts and compact summaries are all skipped — the
+// mirror in the panel shows what the terminal showed.
+export function parseConversationTail(jsonlText, { limit = 30, maxChars = 600 } = {}) {
+  const messages = [];
+  for (const rawLine of jsonlText.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry?.isSidechain === true || entry?.isMeta === true || entry?.isCompactSummary === true) {
+      continue;
+    }
+    const role = entry?.type === 'user' ? 'user' : entry?.type === 'assistant' ? 'assistant' : null;
+    if (!role) continue;
+    const content = entry.message?.content;
+    const text = (
+      typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content
+              .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+              .map((block) => block.text)
+              .join('\n')
+          : ''
+    ).trim();
+    if (!text) continue;
+    messages.push({
+      role,
+      text: text.length > maxChars ? `${text.slice(0, maxChars)}…` : text,
+      at: typeof entry.timestamp === 'string' ? entry.timestamp : null,
+    });
+  }
+  return messages.slice(-limit);
+}
+
+export async function readConversationTail(transcriptPath, options) {
+  try {
+    return parseConversationTail(await readTail(transcriptPath), options);
+  } catch {
+    return [];
+  }
+}
+
 async function readTail(transcriptPath) {
   const { size } = await stat(transcriptPath);
   const start = Math.max(0, size - TAIL_BYTES);
