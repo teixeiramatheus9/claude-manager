@@ -22,7 +22,54 @@ export function buildDesktopEntry({ electronBinary, appDir, iconPath }) {
   ].join('\n');
 }
 
+export function buildLaunchAgentPlist({ electronBinary, appDir }) {
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>',
+    '  <key>Label</key>',
+    '  <string>io.github.teixeiramatheus9.claude-manager</string>',
+    '  <key>ProgramArguments</key>',
+    '  <array>',
+    `    <string>${electronBinary}</string>`,
+    `    <string>${appDir}</string>`,
+    '  </array>',
+    '  <key>RunAtLoad</key>',
+    '  <true/>',
+    '</dict>',
+    '</plist>',
+    '',
+  ].join('\n');
+}
+
+function darwinMain() {
+  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+  const appDir = path.resolve(scriptDir, '..');
+  const electronBinary = path.join(appDir, 'node_modules', 'electron', 'dist', 'electron');
+  const plistFile = path.join(
+    os.homedir(),
+    'Library',
+    'LaunchAgents',
+    'io.github.teixeiramatheus9.claude-manager.plist',
+  );
+
+  if (process.argv.includes('--remove')) {
+    fs.rmSync(plistFile, { force: true });
+    console.log(`Removed ${plistFile}`);
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(plistFile), { recursive: true });
+  fs.writeFileSync(plistFile, buildLaunchAgentPlist({ electronBinary, appDir }));
+  console.log(`Installed ${plistFile}`);
+}
+
 function main() {
+  if (process.platform === 'darwin') {
+    darwinMain();
+    return;
+  }
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const appDir = path.resolve(scriptDir, '..');
   const electronBinary = path.join(appDir, 'node_modules', 'electron', 'dist', 'electron');

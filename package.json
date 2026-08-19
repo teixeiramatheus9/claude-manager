@@ -11,7 +11,8 @@
     "hooks:remove": "node scripts/install-hooks.js --remove",
     "autostart:install": "node scripts/install-autostart.js",
     "autostart:remove": "node scripts/install-autostart.js --remove",
-    "dist": "electron-builder --linux"
+    "dist": "electron-builder --linux",
+    "dist:mac": "electron-builder --mac"
   },
   "author": "teixeiramatheus9 <teixeiramatheus9@users.noreply.github.com>",
   "license": "MIT",
@@ -39,6 +40,14 @@
       ],
       "maintainer": "teixeiramatheus9 <teixeiramatheus9@users.noreply.github.com>",
       "synopsis": "Gerente flutuante das sessões do Claude Code"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.utilities",
+      "identity": null
     }
   },
   "devDependencies": {
