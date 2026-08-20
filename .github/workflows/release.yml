@@ -68,7 +68,7 @@ jobs:
           git push origin "v$VERSION"
           # seed the draft release now, so the parallel build jobs all attach
           # to the same one instead of racing to create it
-          gh release create "v$VERSION" --draft --title "Claude Manager v$VERSION" --notes "em preparação…"
+          gh release create "v$VERSION" --draft --title "Vizor v$VERSION" --notes "em preparação…"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "released version: v$VERSION (from $LATEST)"
         env:

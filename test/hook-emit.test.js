@@ -67,7 +67,7 @@ describe('hook-emit', () => {
     });
 
     const event = { hook_event_name: 'Stop', session_id: 'abc', cwd: '/tmp/proj' };
-    const exitCode = await runHook(JSON.stringify(event), { CLAUDE_MANAGER_SOCKET: socketFile });
+    const exitCode = await runHook(JSON.stringify(event), { VIZOR_SOCKET: socketFile });
     expect(exitCode).toBe(0);
     expect(JSON.parse(await received)).toEqual(event);
   });
@@ -91,7 +91,7 @@ describe('hook-emit', () => {
 
     const event = { hook_event_name: 'Stop', session_id: 'abc', cwd: '/tmp/proj' };
     const exitCode = await runHook(JSON.stringify(event), {
-      CLAUDE_MANAGER_SOCKET: socketFile,
+      VIZOR_SOCKET: socketFile,
       WAVETERM_BLOCKID: 'b1',
       WAVETERM_TABID: 't1',
       WAVETERM_JWT: 'j1',
@@ -122,7 +122,7 @@ describe('hook-emit', () => {
 
     const event = { hook_event_name: 'Stop', session_id: 'abc', cwd: '/tmp/proj' };
     const exitCode = await runHook(JSON.stringify(event), {
-      CLAUDE_MANAGER_SOCKET: socketFile,
+      VIZOR_SOCKET: socketFile,
       ITERM_SESSION_ID: 'w0t2p0:UUID',
       KITTY_WINDOW_ID: '3',
       KITTY_LISTEN_ON: 'unix:/tmp/kitty-sock',
@@ -138,10 +138,18 @@ describe('hook-emit', () => {
     });
   });
 
-  it('exits 0 immediately when CLAUDE_MANAGER_INTERNAL=1', async () => {
+  it('exits 0 immediately when VIZOR_INTERNAL=1', async () => {
+    const exitCode = await runHook('{"hook_event_name":"Stop"}', {
+      VIZOR_INTERNAL: '1',
+      VIZOR_SOCKET: '/nonexistent.sock',
+    });
+    expect(exitCode).toBe(0);
+  });
+
+  it('still honours the legacy CLAUDE_MANAGER_INTERNAL=1 — an old build mid-flight must not loop', async () => {
     const exitCode = await runHook('{"hook_event_name":"Stop"}', {
       CLAUDE_MANAGER_INTERNAL: '1',
-      CLAUDE_MANAGER_SOCKET: '/nonexistent.sock',
+      VIZOR_SOCKET: '/nonexistent.sock',
     });
     expect(exitCode).toBe(0);
   });
@@ -150,14 +158,14 @@ describe('hook-emit', () => {
     // UserPromptSubmit does not trigger the notify-send fallback, keeping tests silent
     const exitCode = await runHook(
       '{"hook_event_name":"UserPromptSubmit","session_id":"x","cwd":"/tmp"}',
-      { CLAUDE_MANAGER_SOCKET: '/nonexistent/dir/absent.sock' },
+      { VIZOR_SOCKET: '/nonexistent/dir/absent.sock' },
     );
     expect(exitCode).toBe(0);
   });
 
   it('exits 0 on garbage stdin', async () => {
     const exitCode = await runHook('not json at all', {
-      CLAUDE_MANAGER_SOCKET: '/nonexistent.sock',
+      VIZOR_SOCKET: '/nonexistent.sock',
     });
     expect(exitCode).toBe(0);
   });
@@ -167,7 +175,7 @@ describe('hook-emit', () => {
     // found anywhere — before the fix this died on an unhandled 'error' event.
     const exitCode = await runHook(
       '{"hook_event_name":"Stop","session_id":"x","cwd":"/tmp/proj"}',
-      { CLAUDE_MANAGER_SOCKET: '/nonexistent/dir/absent.sock', PATH: '', Path: '' },
+      { VIZOR_SOCKET: '/nonexistent/dir/absent.sock', PATH: '', Path: '' },
     );
     expect(exitCode).toBe(0);
   });

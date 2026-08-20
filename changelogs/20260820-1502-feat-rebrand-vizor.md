@@ -1,0 +1,3 @@
+- O app agora se chama **Vizor** (marca curta: vzr) — novo nome em app, pacotes (`vizor.deb/rpm/AppImage/exe`), bandeja, notificações e repositório (github.com/teixeiramatheus9/vizor, com redirects dos links antigos)
+- Migração automática pra quem vem do Claude Manager: a primeira subida adota o `~/.config/claude-manager/` inteiro (posição da bolha, sessões, configurações e vozes baixadas), troca os hooks do Claude Code pelos novos e renova o autostart; no Linux o pacote novo remove o antigo sozinho
+- No macOS, remover o app antigo é manual: `rm -rf "/Applications/Claude Manager.app"`

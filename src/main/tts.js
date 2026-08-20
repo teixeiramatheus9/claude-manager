@@ -103,7 +103,7 @@ function neuralArgvText(text) {
 // system player plays it.
 export function speakNeural(text, voiceId, spawnFn = spawn, volume = 100) {
   const { binary, libDir, args } = voicePaths(sherpaDir, voiceId);
-  const wavFile = path.join(os.tmpdir(), 'claude-manager-tts.wav');
+  const wavFile = path.join(os.tmpdir(), 'vizor-tts.wav');
   const env = { ...process.env, DYLD_LIBRARY_PATH: libDir, LD_LIBRARY_PATH: libDir };
   if (process.platform === 'win32') {
     // Windows finds DLLs through PATH, not LD_LIBRARY_PATH.

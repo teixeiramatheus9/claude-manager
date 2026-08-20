@@ -6,15 +6,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-if (process.env.CLAUDE_MANAGER_INTERNAL === '1') process.exit(0);
+// The legacy env name stays accepted: a `claude -p` spawned by an old
+// claude-manager build still running would otherwise loop through this hook.
+if (process.env.VIZOR_INTERNAL === '1' || process.env.CLAUDE_MANAGER_INTERNAL === '1')
+  process.exit(0);
 
 const socketPath =
-  process.env.CLAUDE_MANAGER_SOCKET ??
+  process.env.VIZOR_SOCKET ??
   (process.platform === 'win32'
     ? // must mirror managerSocketPath() in src/main/paths.js (standalone file,
       // no imports allowed)
-      `\\\\.\\pipe\\claude-manager-${os.userInfo().username.replace(/[^A-Za-z0-9_-]/g, '-')}`
-    : path.join(os.homedir(), '.config', 'claude-manager', 'manager.sock'));
+      `\\\\.\\pipe\\vizor-${os.userInfo().username.replace(/[^A-Za-z0-9_-]/g, '-')}`
+    : path.join(os.homedir(), '.config', 'vizor', 'vizor.sock'));
 
 // Hard safety net: whatever happens, get out of Claude Code's way.
 setTimeout(() => process.exit(0), 3000);
@@ -31,8 +34,8 @@ function fallbackNotify(event) {
   try {
     const [command, args] =
       process.platform === 'darwin'
-        ? ['osascript', ['-e', `display notification ${JSON.stringify(body)} with title "Claude Manager"`]]
-        : ['notify-send', ['Claude Manager', body]];
+        ? ['osascript', ['-e', `display notification ${JSON.stringify(body)} with title "Vizor"`]]
+        : ['notify-send', ['Vizor', body]];
     const child = spawn(command, args, { detached: true, stdio: 'ignore' });
     child.on('error', () => {}); // missing binary must never break exit 0
     child.unref();

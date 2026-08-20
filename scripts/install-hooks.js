@@ -84,7 +84,7 @@ function main() {
   let settings = {};
   if (fs.existsSync(settingsPath)) {
     settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    const backupPath = `${settingsPath}.claude-manager-${Date.now()}.bak`;
+    const backupPath = `${settingsPath}.vizor-${Date.now()}.bak`;
     fs.copyFileSync(settingsPath, backupPath);
     console.log(`Backup: ${backupPath}`);
   } else {
@@ -94,7 +94,7 @@ function main() {
   const remove = process.argv.includes('--remove');
   const next = remove ? removeHooks(settings, command) : addHooks(settings, command);
   fs.writeFileSync(settingsPath, `${JSON.stringify(next, null, 2)}\n`);
-  console.log(`${remove ? 'Removed' : 'Installed'} Claude Manager hooks in ${settingsPath}`);
+  console.log(`${remove ? 'Removed' : 'Installed'} Vizor hooks in ${settingsPath}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

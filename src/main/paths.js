@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 
-export const configDir = path.join(os.homedir(), '.config', 'claude-manager');
+export const configDir = path.join(os.homedir(), '.config', 'vizor');
 
 // Windows has no unix sockets, so the IPC endpoint is a per-user named pipe
 // there. Pipe names live in the pipe namespace, not on disk, and reject some
@@ -11,9 +11,9 @@ export function managerSocketPath(
   configDirectory = configDir,
   username = os.userInfo().username,
 ) {
-  if (platform !== 'win32') return path.join(configDirectory, 'manager.sock');
+  if (platform !== 'win32') return path.join(configDirectory, 'vizor.sock');
   const safe = String(username).replace(/[^A-Za-z0-9_-]/g, '-');
-  return `\\\\.\\pipe\\claude-manager-${safe}`;
+  return `\\\\.\\pipe\\vizor-${safe}`;
 }
 
 export const socketPath = managerSocketPath();

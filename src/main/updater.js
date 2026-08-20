@@ -12,21 +12,21 @@ import { elevationCommand, hasNoNewPrivs, hasSystemdRun } from './privileged-exe
 const execFileAsync = promisify(execFile);
 
 const RELEASES_LATEST_API =
-  'https://api.github.com/repos/teixeiramatheus9/claude-manager/releases/latest';
-export const RELEASES_PAGE = 'https://github.com/teixeiramatheus9/claude-manager/releases/latest';
+  'https://api.github.com/repos/teixeiramatheus9/vizor/releases/latest';
+export const RELEASES_PAGE = 'https://github.com/teixeiramatheus9/vizor/releases/latest';
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 
 async function detectInstalledFormat() {
   if (process.platform === 'darwin') return 'dmg';
   try {
-    await execFileAsync('dpkg', ['-s', 'claude-manager']);
+    await execFileAsync('dpkg', ['-s', 'vizor']);
     return 'deb';
   } catch {
     // not a deb install
   }
   try {
-    await execFileAsync('rpm', ['-q', 'claude-manager']);
+    await execFileAsync('rpm', ['-q', 'vizor']);
     return 'rpm';
   } catch {
     return null;
@@ -36,7 +36,7 @@ async function detectInstalledFormat() {
 // macOS: mount the downloaded dmg, swap the .app in /Applications, strip the
 // quarantine flag (unsigned build) and relaunch — fully automatic.
 async function installDmg(dmgFile) {
-  const mountPoint = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-manager-update-'));
+  const mountPoint = fs.mkdtempSync(path.join(os.tmpdir(), 'vizor-update-'));
   await execFileAsync('hdiutil', ['attach', dmgFile, '-nobrowse', '-mountpoint', mountPoint]);
   try {
     const appName = fs.readdirSync(mountPoint).find((entry) => entry.endsWith('.app'));

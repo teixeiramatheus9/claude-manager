@@ -81,7 +81,7 @@ function renderQuitButton(trayAvailable) {
   quitButton.textContent = trayAvailable ? '[fechar]' : '[sair]';
   quitButton.title = trayAvailable
     ? 'Esconder na bandeja — pra encerrar de vez, usa o ícone lá'
-    : 'Encerrar o Claude Manager';
+    : 'Encerrar o Vizor';
 }
 
 

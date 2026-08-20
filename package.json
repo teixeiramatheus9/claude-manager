@@ -1,5 +1,5 @@
 {
-  "name": "claude-manager",
+  "name": "vizor",
   "version": "0.2.0",
   "private": true,
   "type": "module",
@@ -20,8 +20,8 @@
   "license": "MIT",
   "description": "Gerente flutuante das sessões do Claude Code",
   "build": {
-    "appId": "io.github.teixeiramatheus9.claude-manager",
-    "productName": "Claude Manager",
+    "appId": "io.github.teixeiramatheus9.vizor",
+    "productName": "Vizor",
     "asar": false,
     "files": [
       "src/**/*",
@@ -47,11 +47,21 @@
     "deb": {
       "depends": [
         "xdotool"
+      ],
+      "fpm": [
+        "--replaces",
+        "claude-manager",
+        "--conflicts",
+        "claude-manager"
       ]
     },
     "rpm": {
       "depends": [
         "xdotool"
+      ],
+      "fpm": [
+        "--replaces",
+        "claude-manager"
       ]
     },
     "mac": {
@@ -71,7 +81,7 @@
     "publish": {
       "provider": "github",
       "owner": "teixeiramatheus9",
-      "repo": "claude-manager",
+      "repo": "vizor",
       "releaseType": "draft"
     }
   },

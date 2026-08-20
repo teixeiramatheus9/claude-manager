@@ -31,13 +31,13 @@ export function buildDesktopEntry({ electronBinary, appDir, iconPath }) {
   return [
     '[Desktop Entry]',
     'Type=Application',
-    'Name=Claude Manager',
+    'Name=Vizor',
     'Comment=Gerente flutuante das sessões do Claude Code',
     // The raw electron binary needs no node/nvm on the login PATH.
     `Exec="${electronBinary}" "${appDir}" --no-sandbox`,
     ...(iconPath ? [`Icon=${iconPath}`] : []),
     // Lets GNOME match the running window to this entry (alt-tab/dock icon).
-    'StartupWMClass=claude-manager',
+    'StartupWMClass=vizor',
     'X-GNOME-Autostart-enabled=true',
     'NoDisplay=false',
     'Terminal=false',
@@ -52,7 +52,7 @@ export function buildLaunchAgentPlist({ electronBinary, appDir }) {
     '<plist version="1.0">',
     '<dict>',
     '  <key>Label</key>',
-    '  <string>io.github.teixeiramatheus9.claude-manager</string>',
+    '  <string>io.github.teixeiramatheus9.vizor</string>',
     '  <key>ProgramArguments</key>',
     '  <array>',
     `    <string>${electronBinary}</string>`,
@@ -74,7 +74,7 @@ function darwinMain() {
     os.homedir(),
     'Library',
     'LaunchAgents',
-    'io.github.teixeiramatheus9.claude-manager.plist',
+    'io.github.teixeiramatheus9.vizor.plist',
   );
 
   if (process.argv.includes('--remove')) {
@@ -101,13 +101,13 @@ function main() {
   const appDir = path.resolve(scriptDir, '..');
   const electronBinary = path.join(appDir, 'node_modules', 'electron', 'dist', 'electron');
   const iconPath = path.join(appDir, 'assets', 'icon.png');
-  const autostartFile = path.join(os.homedir(), '.config', 'autostart', 'claude-manager.desktop');
+  const autostartFile = path.join(os.homedir(), '.config', 'autostart', 'vizor.desktop');
   const applicationsFile = path.join(
     os.homedir(),
     '.local',
     'share',
     'applications',
-    'claude-manager.desktop',
+    'vizor.desktop',
   );
 
   if (process.argv.includes('--remove')) {

@@ -1,4 +1,4 @@
-# CLAUDE.md — Claude Manager
+# CLAUDE.md — Vizor
 
 Bolha flutuante (Electron) que gerencia sessões do Claude Code: avisa quando
 um chat termina a tarefa ou fica esperando resposta, mostra tooltip e painel
@@ -15,7 +15,7 @@ resposta rápida direto no terminal e conversa com o gerente.
   voice, warp, budget, display-mode, cc-sessions, cc-peer).
 - `src/hook/hook-emit.js` é standalone de propósito (roda em todo evento de
   toda sessão do Claude Code): rápido, sem deps, **SEMPRE exit 0**, hard-timeout.
-- Anti-recursão: todo `claude -p` interno seta `CLAUDE_MANAGER_INTERNAL=1`;
+- Anti-recursão: todo `claude -p` interno seta `VIZOR_INTERNAL=1` (e o hook ainda aceita o legado `CLAUDE_MANAGER_INTERNAL=1`);
   o hook-emit sai imediatamente ao ver essa env.
 
 ## Arquitetura
@@ -24,7 +24,7 @@ resposta rápida direto no terminal e conversa com o gerente.
 Claude Code (hooks globais em ~/.claude/settings.json)
   UserPromptSubmit / Stop / Notification
         ↓ (JSON no stdin)
-src/hook/hook-emit.js  →  unix socket ~/.config/claude-manager/manager.sock
+src/hook/hook-emit.js  →  unix socket ~/.config/vizor/vizor.sock
         ↓                  (sem socket: fallback notify-send)
 App Electron (src/main/index.js)
   ├── session-registry.js  → estado puro das sessões (testável)
@@ -84,7 +84,7 @@ npm run dist              # AppImage + deb + rpm em dist/
 ./scripts/simulate-event.sh [UserPromptSubmit|Stop|Notification] [nome]
 ```
 
-Runtime: `~/.config/claude-manager/` (`manager.sock`, `state.json`,
+Runtime: `~/.config/vizor/` (`vizor.sock`, `state.json`,
 `sessions.json`, `config.json`, `usage.json`, `log`).
 
 ## Releases (automatizadas)
