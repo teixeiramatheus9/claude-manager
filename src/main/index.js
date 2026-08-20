@@ -1,4 +1,13 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, screen, Tray } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  screen,
+  Tray,
+} from 'electron';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
@@ -19,6 +28,7 @@ import { terminal, tts } from './platform.js';
 import { VOICES } from './sherpa-installer.js';
 import { THEMES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
+import { anchorVisible, centerAnchor } from './bubble-position.js';
 import { setupUpdater } from './updater.js';
 import { detectTrayHost, trayMenuTemplate } from './tray.js';
 import { installTraySupport, shouldInstallTraySupport } from './tray-support.js';
@@ -304,6 +314,24 @@ function showBubble() {
   refreshTrayMenu();
 }
 
+// Brings a lost bubble to the middle of the display under the cursor — saved
+// spot on a display that went away, window buried under others, or plain
+// "where is it?". The pulse tells the eye where to look. On Wayland the app
+// cannot position windows, so there it only shows and pulses in place.
+function findBubble() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  showBubble();
+  if (canPositionWindows) {
+    const cursor = screen.getCursorScreenPoint();
+    bubbleAnchor = centerAnchor(screen.getDisplayNearestPoint(cursor).workArea, BUBBLE_BOX);
+    mainWindow.setPosition(bubbleAnchor.x, bubbleAnchor.y);
+    persistAnchor();
+    if (overlayMode) showOverlay(overlayMode, { focus: overlayMode === 'panel' });
+  }
+  stayOnTop(mainWindow);
+  sendToRenderer('ui:spotted');
+}
+
 function refreshTrayMenu() {
   if (!tray) return;
   const actions = {
@@ -317,6 +345,7 @@ function refreshTrayMenu() {
       sendToRenderer('ui:open-settings');
     },
     toggle: () => (bubbleVisible() ? hideToTray() : showBubble()),
+    find: findBubble,
     quit: () => app.quit(),
   };
   const template = trayMenuTemplate({ bubbleVisible: bubbleVisible() }).map((item) =>
@@ -398,7 +427,10 @@ function setFloatAboveEverything(enabled) {
 }
 
 function createWindows() {
-  const saved = loadPersistedState().bubble;
+  // A saved anchor from a display that no longer exists (unplugged monitor)
+  // would boot the bubble off screen with nothing to grab — fall back instead.
+  const persisted = loadPersistedState().bubble;
+  const saved = anchorVisible(persisted, screen.getAllDisplays(), BUBBLE_BOX) ? persisted : null;
   const workArea = screen.getPrimaryDisplay().workArea;
   bubbleAnchor = {
     x: saved?.x ?? workArea.x + workArea.width - BUBBLE_BOX - 24,
@@ -936,7 +968,14 @@ app.whenReady().then(() => {
   setInterval(() => registry.prune(), PRUNE_INTERVAL_MS);
   setInterval(reapDeadSessions, LIVENESS_INTERVAL_MS);
   updaterHandle = setupUpdater({ onStatus: onUpdateStatus, log });
+  // Wayland compositors may refuse global shortcuts; the tray item stays the
+  // fallback way to find the bubble.
+  if (!globalShortcut.register('CommandOrControl+Alt+B', findBubble)) {
+    log('find-bubble shortcut not registered (taken or unsupported in this session)');
+  }
 });
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
 
 app.on('window-all-closed', () => {
   // with a tray icon the app lives on with every window hidden

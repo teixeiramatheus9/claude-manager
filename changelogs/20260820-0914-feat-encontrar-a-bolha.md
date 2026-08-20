@@ -1,0 +1,3 @@
+- "Encontrar a bolha": item novo no menu da bandeja e atalho global (Ctrl+Alt+B) que trazem a bolha pro centro da tela onde o mouse está, com um pulso de anéis pra ela se denunciar — pra quando ela se perde atrás de janela ou fora da área visível
+- No Wayland (onde o app não pode se reposicionar) o comando mostra e pulsa a bolha onde ela estiver
+- Posição salva num monitor que não existe mais não engole mais a bolha: no boot o app confere se ela cabe em alguma tela atual e, se não, volta pra posição padrão
