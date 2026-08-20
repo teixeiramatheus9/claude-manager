@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import {
   TERMINALS,
@@ -127,6 +127,19 @@ describe('exact focus via the captured terminal identity (darwin)', () => {
     expect(result.tabFound).toBe(true);
     expect(calls[0].command).toBe('wezterm');
     expect(calls[1].args[1]).toContain('"WezTerm" to activate');
+  });
+
+  it('focuses the warp tab through its url instead of hunting titles', async () => {
+    const { calls, execFn } = recorder();
+    const openUrl = vi.fn().mockResolvedValue(undefined);
+    const result = await focusChatTab([], {
+      execFn,
+      openUrl,
+      term: { WARP_TERMINAL_SESSION_UUID: 'abc123' },
+    });
+    expect(openUrl).toHaveBeenCalledWith('warp://session/abc123');
+    expect(result.tabFound).toBe(true);
+    expect(calls[0].args[1]).toContain('"Warp" to activate');
   });
 });
 

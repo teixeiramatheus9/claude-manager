@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   listWindows,
   pickTargetWindow,
@@ -244,6 +244,25 @@ describe('exact focus via the captured terminal identity', () => {
     expect(calls).toEqual(
       expect.arrayContaining([{ command: 'xdotool', args: ['windowactivate', '0x7'] }]),
     );
+  });
+
+  it('focuses the warp tab through its url and only raises the window', async () => {
+    const { execFn, calls } = fakeExec({
+      windows: [{ id: '0x9', wmClass: 'dev.warp.Warp', title: 'Warp' }, ...DEFAULT_WINDOWS],
+    });
+    const openUrl = vi.fn().mockResolvedValue(undefined);
+    const result = await focusChatTab('chat-inexistente-xyz', {
+      execFn,
+      openUrl,
+      delayMs: 0,
+      term: { WARP_TERMINAL_SESSION_UUID: 'abc123' },
+    });
+    expect(openUrl).toHaveBeenCalledWith('warp://session/abc123');
+    expect(result.tabFound).toBe(true);
+    expect(calls).toEqual(
+      expect.arrayContaining([{ command: 'xdotool', args: ['windowactivate', '0x9'] }]),
+    );
+    expect(keyPressesOf(calls)).toHaveLength(0);
   });
 
   it('still hunts the host window by title after selecting a tmux pane', async () => {

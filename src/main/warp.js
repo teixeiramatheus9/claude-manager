@@ -161,6 +161,7 @@ export async function focusChatTab(
     terminal = 'auto',
     allowInputInjection = true,
     term,
+    openUrl,
   } = {},
 ) {
   try {
@@ -179,7 +180,7 @@ export async function focusChatTab(
     // window. The capture outranks the configured terminal — it proves where
     // the session actually lives. tmux selects too, but its host window is
     // unknown, so the title hunt below still decides which window to raise.
-    const exact = await selectExactTab(term, { execFn });
+    const exact = await selectExactTab(term, { execFn, openUrl });
     const exactClassHint = exact.selected ? VIA_APP_HINTS[exact.via]?.classHint : null;
     const allWindows = await listWindows({ execFn });
     if (exactClassHint) {
@@ -265,6 +266,7 @@ export async function answerQuestionInWarp(
     terminal = 'auto',
     allowInputInjection = true,
     term,
+    openUrl,
   } = {},
 ) {
   const { focused, tabFound } = await focusChatTab(searchKeys, {
@@ -273,6 +275,7 @@ export async function answerQuestionInWarp(
     terminal,
     allowInputInjection,
     term,
+    openUrl,
   });
   // The terminal is focused either way, so the user can answer by hand.
   if (!allowInputInjection) return 'needs-terminal';
@@ -308,6 +311,7 @@ export async function sendReplyToWarp(
     terminal = 'auto',
     allowInputInjection = true,
     term,
+    openUrl,
   } = {},
 ) {
   const clipboardFallback = () => {
@@ -325,6 +329,7 @@ export async function sendReplyToWarp(
     terminal,
     allowInputInjection,
     term,
+    openUrl,
   });
   if (!focused) return clipboardFallback();
   // Typing is XTEST: refused on Wayland, so the reply goes to the clipboard
