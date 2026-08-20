@@ -858,6 +858,7 @@ function nudgeLinuxFocusPrereqs(session, result) {
   focusNudgeDone = true;
   log(`linux focus hint: ${hint.key}`);
   new Notification({ title: hint.title, body: hint.body }).show();
+  speakAsManager(hint.speech);
 }
 
 async function nudgeMacosPermissions() {
@@ -878,6 +879,10 @@ async function nudgeMacosPermissions() {
       shell.openExternal(accessible ? AUTOMATION_PANE : ACCESSIBILITY_PANE);
     });
     note.show();
+    speakAsManager(
+      'Preciso de uma permissãozinha sua nos ajustes! Libera o acesso pra mim ' +
+        'que aí eu te levo direto pra aba do chat.',
+    );
   } catch (error) {
     log(`macos permissions nudge failed: ${error}`);
   }

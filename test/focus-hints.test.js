@@ -13,6 +13,15 @@ describe('linuxFocusHint', () => {
     expect(hint.body).toContain('allow_remote_control');
   });
 
+  it('every hint carries a spoken line for the manager voice', () => {
+    for (const hint of [
+      linuxFocusHint({ cause: 'no-x-windows' }, null),
+      linuxFocusHint({ tabFound: false, cause: null }, { KITTY_WINDOW_ID: '3' }),
+    ]) {
+      expect(hint.speech).toBeTruthy();
+    }
+  });
+
   it('stays quiet when the tab was found or nothing is actionable', () => {
     expect(
       linuxFocusHint(

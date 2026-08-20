@@ -10,6 +10,7 @@ export function linuxFocusHint(result, term) {
       body:
         'Pra achar a janela do chat eu uso o xdotool e ele não respondeu. ' +
         'Instala com "sudo apt install xdotool" (ou dnf/pacman) e clica de novo.',
+      speech: 'Opa, tô sem o xdotool aqui! Instala ele pra mim que aí eu te levo direto pro chat.',
     };
   }
   // kitty only exports KITTY_LISTEN_ON when remote control is on — its
@@ -21,6 +22,9 @@ export function linuxFocusHint(result, term) {
       body:
         'Pra ir direto pra aba certa do kitty, adiciona "allow_remote_control yes" ' +
         'no kitty.conf e reabre o terminal.',
+      speech:
+        'Teu kitty tá de portas fechadas! Liga o remote control no kitty ponto conf ' +
+        'que eu passo a te levar direto pra aba certa.',
     };
   }
   return null;
