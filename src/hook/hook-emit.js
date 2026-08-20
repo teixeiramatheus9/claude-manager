@@ -75,6 +75,9 @@ process.stdin.on('end', () => {
     'TMUX',
     'TMUX_PANE',
     'WT_SESSION',
+    // Warp hands every session a uuid that its own warp://session/<uuid> url
+    // focuses — the whole tab hunt collapses into opening that link.
+    'WARP_TERMINAL_SESSION_UUID',
   ]) {
     if (process.env[key]) term[key] = process.env[key];
   }

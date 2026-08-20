@@ -39,6 +39,7 @@ function runHook(input, env = {}) {
         TMUX: '',
         TMUX_PANE: '',
         WT_SESSION: '',
+        WARP_TERMINAL_SESSION_UUID: '',
         ...env,
       },
       stdio: ['pipe', 'ignore', 'ignore'],
@@ -135,6 +136,34 @@ describe('hook-emit', () => {
         KITTY_WINDOW_ID: '3',
         KITTY_LISTEN_ON: 'unix:/tmp/kitty-sock',
       },
+    });
+  });
+
+  it('captures the warp session uuid, which addresses the tab directly', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-hook-warp-'));
+    const socketFile = testSocketPath(dir, 'warp.sock');
+    const received = new Promise((resolve) => {
+      const server = net.createServer((connection) => {
+        let data = '';
+        connection.on('data', (chunk) => {
+          data += chunk;
+        });
+        connection.on('end', () => {
+          server.close();
+          resolve(data);
+        });
+      });
+      server.listen(socketFile);
+    });
+
+    const event = { hook_event_name: 'Stop', session_id: 'abc', cwd: '/tmp/proj' };
+    const exitCode = await runHook(JSON.stringify(event), {
+      VIZOR_SOCKET: socketFile,
+      WARP_TERMINAL_SESSION_UUID: '3278322462a249a4b0001d0e24f6907d',
+    });
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(await received).term).toEqual({
+      WARP_TERMINAL_SESSION_UUID: '3278322462a249a4b0001d0e24f6907d',
     });
   });
 

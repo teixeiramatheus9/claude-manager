@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { anchorVisible, centerAnchor } from '../src/main/bubble-position.js';
+import { anchorVisible, centerAnchor, findBubbleAnchor } from '../src/main/bubble-position.js';
 
 const BOX = 56;
 const primary = { workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
@@ -37,6 +37,44 @@ describe('centerAnchor', () => {
 
   it('respects the work area origin of a secondary display', () => {
     expect(centerAnchor(second.workArea, BOX)).toEqual({ x: 2532, y: 464 });
+  });
+});
+
+describe('findBubbleAnchor', () => {
+  // "encontrar a bolha" is about POINTING at it: a bubble already on screen
+  // must stay exactly where the user left it and only pulse.
+  it('keeps a bubble that is already on screen where it is', () => {
+    const anchor = { x: 100, y: 100 };
+    expect(
+      findBubbleAnchor({
+        anchor,
+        displays: [primary],
+        cursorWorkArea: primary.workArea,
+        box: BOX,
+      }),
+    ).toEqual({ anchor, moved: false });
+  });
+
+  it('recenters when the saved spot is on a display that went away', () => {
+    expect(
+      findBubbleAnchor({
+        anchor: { x: 2000, y: 40 },
+        displays: [primary],
+        cursorWorkArea: primary.workArea,
+        box: BOX,
+      }),
+    ).toEqual({ anchor: { x: 932, y: 492 }, moved: true });
+  });
+
+  it('recenters on the cursor display when there is no anchor yet', () => {
+    expect(
+      findBubbleAnchor({
+        anchor: null,
+        displays: [primary, second],
+        cursorWorkArea: second.workArea,
+        box: BOX,
+      }),
+    ).toEqual({ anchor: { x: 2532, y: 464 }, moved: true });
   });
 });
 

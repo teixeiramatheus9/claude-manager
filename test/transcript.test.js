@@ -5,8 +5,10 @@ import path from 'node:path';
 import {
   parseLastAssistantMessage,
   parsePendingQuestion,
+  parseAiTitle,
   readTranscriptSnapshot,
   readLastAssistantMessage,
+  readAiTitle,
 } from '../src/main/transcript.js';
 
 const assistantLine = (text) =>
@@ -104,6 +106,52 @@ describe('parsePendingQuestion', () => {
   it('returns null when there is no pending ask', () => {
     expect(parsePendingQuestion([userLine('oi'), assistantLine('salve')].join('\n'))).toBeNull();
     expect(parsePendingQuestion('')).toBeNull();
+  });
+});
+
+const aiTitleLine = (title) => JSON.stringify({ type: 'ai-title', aiTitle: title });
+
+describe('parseAiTitle', () => {
+  it('returns the LAST ai-title entry', () => {
+    const jsonl = [
+      aiTitleLine('primeiro tema'),
+      assistantLine('respondi'),
+      aiTitleLine('tema atualizado'),
+      assistantLine('respondi de novo'),
+    ].join('\n');
+    expect(parseAiTitle(jsonl)).toBe('tema atualizado');
+  });
+
+  it('skips malformed lines and entries without a string aiTitle', () => {
+    const jsonl = [
+      aiTitleLine('tema real'),
+      'not json {{{',
+      JSON.stringify({ type: 'ai-title', aiTitle: 42 }),
+      JSON.stringify({ type: 'ai-title' }),
+    ].join('\n');
+    expect(parseAiTitle(jsonl)).toBe('tema real');
+  });
+
+  it('ignores blank titles', () => {
+    expect(parseAiTitle(aiTitleLine('   '))).toBeNull();
+  });
+
+  it('returns null when there is no ai-title', () => {
+    expect(parseAiTitle([userLine('oi'), assistantLine('salve')].join('\n'))).toBeNull();
+    expect(parseAiTitle('')).toBeNull();
+  });
+});
+
+describe('readAiTitle', () => {
+  it('reads the title from a real file', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-ai-title-'));
+    const file = path.join(dir, 't.jsonl');
+    await writeFile(file, `${aiTitleLine('Windows update check não funciona')}\n${assistantLine('oi')}\n`);
+    expect(await readAiTitle(file)).toBe('Windows update check não funciona');
+  });
+
+  it('returns null for a missing file', async () => {
+    expect(await readAiTitle('/nonexistent/nope.jsonl')).toBeNull();
   });
 });
 

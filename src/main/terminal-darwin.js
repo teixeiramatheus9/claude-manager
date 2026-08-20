@@ -187,8 +187,9 @@ async function focusTabByTty(tty, { execFn, terminal }) {
   return false;
 }
 
-// Exact focus, in order of precision: WaveTerm block via wsh, then a terminal
-// CLI over the identity the hook captured (kitty, WezTerm, tmux), then the
+// Exact focus, in order of precision: WaveTerm block via wsh, then the
+// identity the hook captured — Warp's own url scheme, or a terminal CLI
+// (kitty, WezTerm, tmux) — then the
 // session's tty hunted through AppleScript (Terminal.app, iTerm2). Only when
 // every exact route misses does it settle for activating the configured app —
 // with tabFound false, so nothing is ever typed blind.
@@ -203,6 +204,7 @@ export async function focusChatTab(
     delayMs = 200,
     maxTabs = 12,
     allowInputInjection = true,
+    openUrl,
   } = {},
 ) {
   const spec = TERMINALS[terminal] ?? TERMINALS.auto;
@@ -234,7 +236,7 @@ export async function focusChatTab(
 
   // The capture outranks the configured terminal — it proves where the
   // session actually lives.
-  const exact = await selectExactTab(term, { execFn });
+  const exact = await selectExactTab(term, { execFn, openUrl });
   const exactApp = exact.selected ? VIA_APP_HINTS[exact.via]?.darwinApp : null;
   if (exactApp) {
     try {
@@ -290,6 +292,7 @@ export async function answerQuestionInWarp(
     term,
     sessionPid,
     allowInputInjection = true,
+    openUrl,
   } = {},
 ) {
   const { focused, tabFound } = await focusChatTab(searchKeys, {
@@ -299,6 +302,7 @@ export async function answerQuestionInWarp(
     term,
     sessionPid,
     allowInputInjection,
+    openUrl,
   });
   if (!focused || !tabFound) return 'not-found';
   try {
@@ -326,6 +330,7 @@ export async function sendReplyToWarp(
     term,
     sessionPid,
     allowInputInjection = true,
+    openUrl,
   } = {},
 ) {
   const clipboardFallback = () => {
@@ -344,6 +349,7 @@ export async function sendReplyToWarp(
     term,
     sessionPid,
     allowInputInjection,
+    openUrl,
   });
   if (!focused || !tabFound) return clipboardFallback();
   try {

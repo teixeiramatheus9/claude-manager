@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   selectExactTab,
   waveTabIndex,
@@ -15,6 +15,39 @@ function recorder(failOn = () => false) {
   };
   return { calls, execFn };
 }
+
+describe('selectExactTab — warp deep link', () => {
+  it('focuses the exact warp tab through its own url scheme', async () => {
+    const openUrl = vi.fn().mockResolvedValue(undefined);
+    const execFn = vi.fn();
+    const result = await selectExactTab(
+      { WARP_TERMINAL_SESSION_UUID: '3278322462a249a4b0001d0e24f6907d' },
+      { openUrl, execFn },
+    );
+    expect(openUrl).toHaveBeenCalledWith('warp://session/3278322462a249a4b0001d0e24f6907d');
+    expect(execFn).not.toHaveBeenCalled(); // no shelling out, no keystrokes
+    expect(result).toEqual({ selected: true, via: 'warp' });
+  });
+
+  it('ignores a uuid that is not plain hex', async () => {
+    const openUrl = vi.fn();
+    const result = await selectExactTab(
+      { WARP_TERMINAL_SESSION_UUID: 'nope"; rm -rf /' },
+      { openUrl },
+    );
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(result).toEqual({ selected: false, via: null });
+  });
+
+  it('falls through when opening the url fails', async () => {
+    const openUrl = vi.fn().mockRejectedValue(new Error('no handler'));
+    const result = await selectExactTab(
+      { WARP_TERMINAL_SESSION_UUID: 'abc123' },
+      { openUrl },
+    );
+    expect(result).toEqual({ selected: false, via: null });
+  });
+});
 
 describe('selectExactTab', () => {
   it('does nothing without a capture', async () => {
