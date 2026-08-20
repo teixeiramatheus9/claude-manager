@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { buildHookCommand, ensureHooks, removeAppHooks } from '../../scripts/install-hooks.js';
 import { SessionRegistry } from './session-registry.js';
 import { startSocketServer, stopSocketServer } from './socket-server.js';
-import { readConversationTail, readTranscriptSnapshot } from './transcript.js';
+import { readAiTitle, readConversationTail, readTranscriptSnapshot } from './transcript.js';
 import { generateManagerMessage, humanizeNotification } from './manager-voice.js';
 import { digestMessage } from './message-digest.js';
 import { askManager, findMentionedSession } from './manager-chat.js';
@@ -73,7 +73,7 @@ import {
   ACCESSIBILITY_PANE,
   AUTOMATION_PANE,
 } from './permissions-darwin.js';
-import { linuxFocusHint } from './focus-hints.js';
+import { linuxFocusHint, win32FocusHint } from './focus-hints.js';
 import { sendUserMessage } from './cc-peer.js';
 
 // Two window-management modes:
@@ -882,11 +882,20 @@ ipcMain.handle('config:set', (_event, partial) => {
 // next hunt hits it instantly instead of cycling tabs again.
 const matchedTitleCache = new Map();
 
-function sessionSearchKeys(session) {
-  // Warp tabs running Claude Code are titled with the chat THEME, plain
-  // shell tabs usually show the cwd — so hunt by both kinds of name.
+// Remembers WHICH tab (1-based) held each session, so terminals with a "go to
+// tab N" shortcut jump straight there instead of walking every tab again.
+const tabIndexCache = new Map();
+
+async function sessionSearchKeys(session) {
+  // Terminals show the title Claude Code pushes for the session — the same
+  // string it stores as the transcript's ai-title — so that is the key most
+  // likely to match. Read fresh at hunt time: it survives events the app
+  // missed while it was down. Plain shell tabs usually show the cwd, and the
+  // remaining keys cover those.
+  const aiTitle = session?.transcriptPath ? await readAiTitle(session.transcriptPath) : null;
   return [
     matchedTitleCache.get(session?.id),
+    aiTitle,
     session?.projectName,
     session?.title,
     session?.promptPreview,
@@ -901,6 +910,9 @@ function sessionFocusTarget(session) {
     wave: session?.wave,
     term: session?.term,
     sessionPid: session?.id ? readSessionPid(session.id) : null,
+    tabIndex: tabIndexCache.get(session?.id),
+    // Warp's own url scheme: the cheapest, most exact route there is.
+    openUrl: (url) => shell.openExternal(url),
   };
 }
 
@@ -911,12 +923,13 @@ function sessionFocusTarget(session) {
 // lists the app in the pane), the Automation prompt via a harmless probe, and
 // a notification that opens the right panel. Linux: no dialog to raise, so a
 // notification names the missing piece (xdotool, kitty remote control).
+// Windows: no dialog either — the actionable miss is a terminal hiding its
+// tab titles, or PowerShell being unreachable.
 let focusNudgeDone = false;
-function nudgeLinuxFocusPrereqs(session, result) {
-  const hint = linuxFocusHint(result, session?.term);
+function nudgeFocusPrereqs(hint, platform) {
   if (!hint) return; // nothing actionable — stay quiet and keep watching
   focusNudgeDone = true;
-  log(`linux focus hint: ${hint.key}`);
+  log(`${platform} focus hint: ${hint.key}`);
   new Notification({ title: hint.title, body: hint.body }).show();
   speakAsManager(hint.speech);
 }
@@ -994,15 +1007,19 @@ async function nudgeMacosPermissions() {
 }
 
 async function huntSessionTab(session) {
-  const result = await terminal.focusChatTab(sessionSearchKeys(session), {
+  // Timed because a slow hunt is a visible one: the user watches tabs flip.
+  const startedAt = Date.now();
+  const result = await terminal.focusChatTab(await sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
     ...sessionFocusTarget(session),
   });
-  log(`focus ${session?.id?.slice(0, 8)}: ${JSON.stringify(result)}`);
+  log(`focus ${session?.id?.slice(0, 8)} in ${Date.now() - startedAt}ms: ${JSON.stringify(result)}`);
   if (!result.tabFound && !focusNudgeDone) {
     if (process.platform === 'darwin') nudgeMacosPermissions();
-    else if (process.platform === 'linux') nudgeLinuxFocusPrereqs(session, result);
+    else if (process.platform === 'linux')
+      nudgeFocusPrereqs(linuxFocusHint(result, session?.term), 'linux');
+    else if (process.platform === 'win32') nudgeFocusPrereqs(win32FocusHint(result), 'win32');
   }
   if (session?.id) {
     if (result.tabFound && result.matchedTitle) {
@@ -1010,6 +1027,8 @@ async function huntSessionTab(session) {
     } else if (!result.tabFound) {
       matchedTitleCache.delete(session?.id);
     }
+    if (result.tabFound && result.tabIndex) tabIndexCache.set(session.id, result.tabIndex);
+    else if (!result.tabFound) tabIndexCache.delete(session.id);
   }
   return result;
 }
@@ -1050,7 +1069,7 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
     log(`peer channel unusable for answer on ${session.id} (${outcome})`);
   }
 
-  const result = await terminal.answerQuestionInWarp(sessionSearchKeys(session), index, {
+  const result = await terminal.answerQuestionInWarp(await sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
     ...sessionFocusTarget(session),
@@ -1076,7 +1095,7 @@ async function replyToSession(session, text) {
     if (outcome === 'sent') return 'sent';
     log(`peer channel unusable for ${session.id} (${outcome}) — falling back to the terminal`);
   }
-  return terminal.sendReplyToWarp(sessionSearchKeys(session), text, {
+  return terminal.sendReplyToWarp(await sessionSearchKeys(session), text, {
     writeClipboard: (value) => clipboard.writeText(value),
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,

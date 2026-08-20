@@ -1,3 +1,52 @@
+// Windows needs no permission to focus a window, so a miss is either the
+// PowerShell layer being unavailable or the terminal hiding its tab titles —
+// the one thing the user can turn back on. Same contract as linuxFocusHint:
+// null when there is nothing actionable to say.
+export function win32FocusHint(result) {
+  if (result?.cause === 'powershell-failed') {
+    return {
+      key: 'powershell',
+      title: 'Não consegui falar com o PowerShell',
+      body:
+        'Uso o PowerShell pra achar a janela do chat e ele não respondeu. ' +
+        'Se tiver política de execução travada ou antivírus bloqueando, libera ele pra mim.',
+      speech: 'Opa, o PowerShell não respondeu aqui! Sem ele eu não acho a janela do teu chat.',
+    };
+  }
+  // Windows refuses SetForegroundWindow while another app holds focus, so the
+  // tab hunt never ran. Nothing was typed (that would have hit the other app).
+  if (result?.cause === 'focus-refused') {
+    return {
+      key: 'focus-refused',
+      title: 'O Windows não me deixou trazer o terminal pra frente',
+      body:
+        'Levantei a janela do chat, mas o Windows manteve o foco em outro app, ' +
+        'então parei antes de procurar a aba — teclas ali iriam pro app errado. ' +
+        'Clica na janela do terminal e tenta de novo.',
+      speech:
+        'O Windows não me deixou trazer teu terminal pra frente! Segurei as teclas ' +
+        'pra não bagunçar outro app — clica na janela dele e me chama de novo.',
+    };
+  }
+  // A hunt saw every tab of the window and none announced the chat — the
+  // fingerprint of a terminal configured to ignore the title the app sets.
+  // Only that specific outcome earns this hint: a Wave block that vanished,
+  // or a window merely raised with no tab hunt at all, would be misdiagnosed.
+  if (result?.focused && !result.tabFound && result.cause === 'no-tab-matched') {
+    return {
+      key: 'tab-titles',
+      title: 'Teu terminal está escondendo o nome das abas',
+      body:
+        'Achei a janela, mas nenhuma aba diz em qual chat está. No Windows Terminal, ' +
+        'desmarca "suppressApplicationTitle" no perfil pra eu ir direto na aba certa.',
+      speech:
+        'Achei a janela, mas as abas do teu terminal não dizem o nome do chat! ' +
+        'Libera o título das abas que eu passo a te levar direto na certa.',
+    };
+  }
+  return null;
+}
+
 // Linux has no permission dialog to raise: what breaks focus there is a
 // missing tool or a terminal config, and both fail silently. This maps a
 // failed focus to the one hint worth showing — null when there is nothing
