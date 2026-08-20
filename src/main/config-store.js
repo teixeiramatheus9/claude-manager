@@ -17,6 +17,7 @@ export const DEFAULT_CONFIG = {
   ttsEnabled: false,
   typeVolumes: { start: 100, done: 100, question: 100, waiting: 100 },
   tokenBudgetDaily: 100000,
+  autoUpdate: true,
 };
 
 export function loadConfig(file) {

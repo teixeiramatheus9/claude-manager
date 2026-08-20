@@ -576,6 +576,19 @@ crtCheckbox.addEventListener('change', () => {
   applyCrt(crtCheckbox.checked);
   window.manager.setConfig({ crt: crtCheckbox.checked });
 });
+
+const autoUpdateCheckbox = document.getElementById('auto-update');
+const autoUpdateState = document.getElementById('auto-update-state');
+
+function applyAutoUpdate(on) {
+  autoUpdateCheckbox.checked = Boolean(on);
+  autoUpdateState.textContent = on ? '[on]' : '[off]';
+}
+
+autoUpdateCheckbox.addEventListener('change', () => {
+  applyAutoUpdate(autoUpdateCheckbox.checked);
+  window.manager.setConfig({ autoUpdate: autoUpdateCheckbox.checked });
+});
 for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
@@ -1075,6 +1088,7 @@ function applySound(sound) {
 window.manager.onState((state) => {
   applyTheme(state.theme);
   applyCrt(state.crt);
+  applyAutoUpdate(state.autoUpdate);
   applySound(state.sound);
   renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);

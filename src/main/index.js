@@ -32,7 +32,12 @@ import {
   updateNoticeFile,
   configDir,
 } from './paths.js';
-import { UPDATE_DONE_PHRASE, shouldAnnounce } from './update-notice.js';
+import {
+  UPDATE_DONE_PHRASE,
+  shouldAnnounce,
+  shouldAutoApply,
+  updateAnnouncement,
+} from './update-notice.js';
 import { log } from './log.js';
 import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
 import {
@@ -161,6 +166,7 @@ function sendState() {
     trayAvailable: Boolean(tray),
     trayNeedsRelogin,
     crt: managerConfig.crt,
+    autoUpdate: managerConfig.autoUpdate,
     sound: {
       muted: managerConfig.muted,
       volume: managerConfig.soundVolume,
@@ -177,24 +183,66 @@ function sendState() {
   });
 }
 
+function speakAsManager(text) {
+  if (!managerConfig.ttsEnabled) return;
+  const volume = Math.round((managerConfig.voiceVolume * managerConfig.soundVolume) / 100);
+  tts.speak(text, { voice: managerConfig.voice, volume });
+}
+
+// The install relaunches the app; the note left behind is what lets the new
+// version announce itself (see announceUpdateIfJustInstalled).
+function applyUpdate() {
+  const version = updateStatus.ready ?? updateStatus.available;
+  try {
+    if (version) fs.writeFileSync(updateNoticeFile, JSON.stringify({ version }));
+  } catch (error) {
+    log(`update notice failed: ${error}`);
+  }
+  updaterHandle.apply();
+}
+
+// One auto-apply per version: a cancelled password prompt flips failed, and
+// the same version must not come asking again on the next status change.
+let autoApplyAttempted = null;
+
 function onUpdateStatus(status) {
-  const wasInstalling = updateStatus.installing;
+  const previous = updateStatus;
   updateStatus = status;
   sendState();
-  if (status.installing !== wasInstalling) {
+  if (status.installing !== previous.installing) {
     setFloatAboveEverything(!status.installing);
     if (status.installing) hideOverlay();
   }
+  const phrase = updateAnnouncement(previous, status, managerConfig.autoUpdate);
+  if (phrase) speakAsManager(phrase);
   const version = status.ready ?? status.available;
-  if (!version || announcedUpdateVersion === version) return;
-  announcedUpdateVersion = version;
-  sendToRenderer('tooltip', {
-    projectName: 'Claude Manager',
-    text: status.ready
-      ? `Atualização v${version} pronta! Clica no banner do painel pra reiniciar.`
-      : `Versão v${version} disponível!`,
-    kind: 'done',
-  });
+  if (version && announcedUpdateVersion !== version) {
+    announcedUpdateVersion = version;
+    sendToRenderer('tooltip', {
+      projectName: 'Claude Manager',
+      text: managerConfig.autoUpdate
+        ? `Versão v${version} — vou me atualizar sozinho.`
+        : status.ready
+          ? `Atualização v${version} pronta! Clica no banner do painel pra reiniciar.`
+          : `Versão v${version} disponível!`,
+      kind: 'done',
+    });
+  }
+  if (
+    shouldAutoApply({
+      autoUpdate: managerConfig.autoUpdate,
+      mode: status.mode,
+      available: status.available,
+      ready: status.ready,
+      installing: status.installing,
+      failed: status.failed,
+      attemptedVersion: autoApplyAttempted,
+    })
+  ) {
+    autoApplyAttempted = status.mode === 'auto' ? status.ready : status.available;
+    log(`updater: self-applying ${autoApplyAttempted}`);
+    applyUpdate();
+  }
 }
 
 function loadPersistedState() {
@@ -533,15 +581,7 @@ ipcMain.handle('sessions:rescan', () => {
   );
 });
 
-ipcMain.on('update:apply', () => {
-  const version = updateStatus.ready ?? updateStatus.available;
-  try {
-    if (version) fs.writeFileSync(updateNoticeFile, JSON.stringify({ version }));
-  } catch (error) {
-    log(`update notice failed: ${error}`);
-  }
-  updaterHandle.apply();
-});
+ipcMain.on('update:apply', applyUpdate);
 
 ipcMain.handle('update:check', async () => {
   const status = await (updaterHandle.check?.() ?? updateStatus);
@@ -607,6 +647,7 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (typeof partial?.theme === 'string' && THEMES[partial.theme]) allowed.theme = partial.theme;
   if (Number.isFinite(partial?.panelScale)) allowed.panelScale = clampScale(partial.panelScale);
   if (typeof partial?.crt === 'boolean') allowed.crt = partial.crt;
+  if (typeof partial?.autoUpdate === 'boolean') allowed.autoUpdate = partial.autoUpdate;
   if (typeof partial?.muted === 'boolean') allowed.muted = partial.muted;
   if (typeof partial?.ttsEnabled === 'boolean') allowed.ttsEnabled = partial.ttsEnabled;
   if (typeof partial?.timbre === 'string') allowed.timbre = partial.timbre;
@@ -879,9 +920,8 @@ function announceUpdateIfJustInstalled() {
   } catch {
     return;
   }
-  if (!shouldAnnounce(mark, app.getVersion()) || !managerConfig.ttsEnabled) return;
-  const volume = Math.round((managerConfig.voiceVolume * managerConfig.soundVolume) / 100);
-  tts.speak(UPDATE_DONE_PHRASE, { voice: managerConfig.voice, volume });
+  if (!shouldAnnounce(mark, app.getVersion())) return;
+  speakAsManager(UPDATE_DONE_PHRASE);
 }
 
 function hydrateRegistry() {
