@@ -178,6 +178,47 @@ export function claudeTranscriptPath(cwd, sessionId, { home = os.homedir() } = {
   return path.join(home, '.claude', 'projects', flattened, `${sessionId}.jsonl`);
 }
 
+// Resolves a hook-reported sessionId to the live pid of its claude process,
+// or null. Unlike readSessionChannel this ignores the messaging protocol gate:
+// the pid is for locating the session's terminal (its tty), not for talking.
+export function readSessionPid(
+  sessionId,
+  {
+    dir = claudeSessionsDir,
+    readdirSync = fs.readdirSync,
+    readFileSync = fs.readFileSync,
+    procStartFor = defaultProcStartFor,
+    isAlive = defaultIsAlive,
+  } = {},
+) {
+  if (typeof sessionId !== 'string' || !sessionId) return null;
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    if (!entry.endsWith('.json')) continue;
+    let raw;
+    try {
+      raw = JSON.parse(readFileSync(path.join(dir, entry), 'utf8'));
+    } catch {
+      continue;
+    }
+    const { pid } = raw ?? {};
+    if (raw?.sessionId !== sessionId || !Number.isInteger(pid)) continue;
+    if (!isAlive(pid)) continue;
+    const procStart = typeof raw.procStart === 'string' ? raw.procStart : null;
+    if (procStart) {
+      const localStart = procStartFor(pid);
+      if (localStart && localStart !== procStart) continue;
+    }
+    return pid;
+  }
+  return null;
+}
+
 // Resolves a hook-reported sessionId to everything needed to talk to that
 // session's socket, or null when there is no usable channel — in which case the
 // caller falls back to driving the terminal window.

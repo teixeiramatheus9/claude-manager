@@ -32,6 +32,50 @@ describe('TERMINALS (win32)', () => {
   });
 });
 
+describe('exact focus via the captured terminal identity (win32)', () => {
+  it('activates the wezterm pane through its CLI and raises the window', async () => {
+    const native = fakeNative([
+      { id: '1', class: 'windowsterminal', title: 'outra-coisa' },
+      { id: '2', class: 'wezterm-gui', title: 'claude — wezterm' },
+    ]);
+    const calls = [];
+    const execFn = async (command, args, opts) => {
+      calls.push({ command, args, opts });
+      return { stdout: '' };
+    };
+    const result = await focusChatTab(['chat-inexistente-xyz'], {
+      native,
+      execFn,
+      delayMs: 0,
+      term: { WEZTERM_PANE: '7' },
+    });
+    expect(calls[0]).toMatchObject({
+      command: 'wezterm',
+      args: ['cli', 'activate-pane', '--pane-id', '7'],
+    });
+    expect(native.activateWindow).toHaveBeenCalledWith('2', expect.anything());
+    expect(result.tabFound).toBe(true);
+    expect(native.sendKeys).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the title hunt when the CLI is unavailable', async () => {
+    const native = fakeNative([
+      { id: '2', class: 'wezterm-gui', title: 'claude-manager — claude' },
+    ]);
+    const execFn = async () => {
+      throw new Error('wezterm not on PATH');
+    };
+    const result = await focusChatTab(['claude-manager'], {
+      native,
+      execFn,
+      delayMs: 0,
+      term: { WEZTERM_PANE: '7' },
+    });
+    expect(result.tabFound).toBe(true);
+    expect(result.matchedTitle).toBe('claude-manager — claude');
+  });
+});
+
 describe('focusChatTab', () => {
   it('activates a window whose title already matches', async () => {
     const native = fakeNative([
@@ -96,6 +140,34 @@ describe('focusChatTab', () => {
       expect.stringContaining('wsh'),
       ['focusblock', '-b', 'b1'],
       expect.objectContaining({ env: expect.objectContaining({ WAVETERM_JWT: 'j1' }) }),
+    );
+    expect(result.tabFound).toBe(true);
+  });
+
+  it('switches to the wave block tab with Ctrl+n before focusing the block', async () => {
+    const native = fakeNative([{ id: '9', class: 'wave', title: 'Wave' }]);
+    const workspaceRow = JSON.stringify({
+      tabids: ['t0', 't1', 't2'],
+      pinnedtabids: [],
+      activetabid: 't0',
+    });
+    const execFn = vi.fn().mockImplementation(async (command) => ({
+      stdout: command === 'sqlite3' ? `${workspaceRow}\n` : '',
+    }));
+    const wave = { blockId: 'b1', tabId: 't1', jwt: 'j1' };
+    const result = await focusChatTab(['proj'], {
+      native,
+      execFn,
+      wave,
+      terminal: 'waveterm',
+      delayMs: 0,
+    });
+    // t1 sits at visible index 1 → Ctrl+2, then focusblock inside the tab
+    expect(native.sendKeys).toHaveBeenCalledWith('^2', expect.anything());
+    expect(execFn).toHaveBeenCalledWith(
+      expect.stringContaining('wsh'),
+      ['focusblock', '-b', 'b1'],
+      expect.anything(),
     );
     expect(result.tabFound).toBe(true);
   });

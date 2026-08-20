@@ -46,9 +46,13 @@ export class SessionRegistry extends EventEmitter {
       unread: false,
       updatedAt: 0,
       wave: null,
+      term: null,
       seenAlive: false,
     };
     if (event.wave?.blockId) session.wave = event.wave;
+    if (event.term && typeof event.term === 'object' && Object.keys(event.term).length) {
+      session.term = event.term;
+    }
     if (event.cwd) {
       session.cwd = event.cwd;
       session.projectName = path.basename(event.cwd);
@@ -184,6 +188,7 @@ export class SessionRegistry extends EventEmitter {
         unread: false,
         updatedAt: this.now(),
         wave: null,
+        term: null,
         seenAlive: true,
       });
       added++;
