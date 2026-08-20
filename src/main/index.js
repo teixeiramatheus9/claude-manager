@@ -31,7 +31,12 @@ import { terminal, tts } from './platform.js';
 import { VOICES } from './sherpa-installer.js';
 import { THEMES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
-import { anchorVisible, centerAnchor, spotlightBounds } from './bubble-position.js';
+import {
+  anchorVisible,
+  centerAnchor,
+  findBubbleAnchor,
+  spotlightBounds,
+} from './bubble-position.js';
 import { sanitizeShortcuts } from './shortcuts.js';
 import { applyLinuxAutostart, autostartFilePath, desktopEntry, execLine } from './autostart.js';
 import { legacyAutostartFile, legacyConfigDir, migrateLegacyInstall } from './migration.js';
@@ -416,11 +421,15 @@ function showBubble() {
   refreshTrayMenu();
 }
 
-// Brings a lost bubble to the middle of the display under the cursor — saved
-// spot on a display that went away, window buried under others, or plain
-// "where is it?". The pulse tells the eye where to look. On Wayland the app
-// cannot position windows, so there it only shows and pulses in place.
-const SPOT_BOX = 160;
+// Points at the bubble with a sonar pulse, leaving it exactly where the user
+// put it. Only a bubble with nowhere to point AT — never placed, or saved on a
+// display that went away — gets moved to the middle of the display under the
+// cursor. On Wayland the app cannot position windows, so there it only shows
+// and pulses in place.
+// The halo window is bigger than the rings on purpose: the glow spreads ~20px
+// past the ring and a tight window would slice it into a square on dark
+// backgrounds.
+const SPOT_BOX = 220;
 const SPOT_MS = 2400;
 let spotlightTimer = null;
 
@@ -457,10 +466,18 @@ function findBubble() {
   showBubble();
   if (canPositionWindows) {
     const cursor = screen.getCursorScreenPoint();
-    bubbleAnchor = centerAnchor(screen.getDisplayNearestPoint(cursor).workArea, BUBBLE_BOX);
-    mainWindow.setPosition(bubbleAnchor.x, bubbleAnchor.y);
-    persistAnchor();
-    if (overlayMode) showOverlay(overlayMode, { focus: overlayMode === 'panel' });
+    const found = findBubbleAnchor({
+      anchor: bubbleAnchor,
+      displays: screen.getAllDisplays(),
+      cursorWorkArea: screen.getDisplayNearestPoint(cursor).workArea,
+      box: BUBBLE_BOX,
+    });
+    bubbleAnchor = found.anchor;
+    if (found.moved) {
+      mainWindow.setPosition(bubbleAnchor.x, bubbleAnchor.y);
+      persistAnchor();
+      if (overlayMode) showOverlay(overlayMode, { focus: overlayMode === 'panel' });
+    }
     flashSpotlight();
   }
   stayOnTop(mainWindow);

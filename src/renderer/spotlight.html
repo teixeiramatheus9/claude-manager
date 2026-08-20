@@ -4,9 +4,14 @@
     <meta charset="utf-8" />
     <style>
       /* Click-through halo window for "encontrar a bolha": sonar rings that
-         expand well past the bubble. Round by construction — the window is
-         fully transparent, so there is no container edge to leave a square
-         ghost behind. --ring is injected by main with the live theme accent. */
+         expand well past the bubble. --ring is injected by main with the live
+         theme accent.
+         The window is transparent, but transparency alone does not make the
+         halo round: the rings' glow spreads ~20px past the border and the
+         window edge cuts it in a straight line, which reads as a square box
+         on a dark background. Two things keep that from happening — the rings
+         stop short of the edge (see .ring inset and the sonar end scale), and
+         the radial mask fades whatever is left well before the border. */
       html,
       body {
         margin: 0;
@@ -14,19 +19,24 @@
         background: transparent;
         overflow: hidden;
       }
+      body {
+        -webkit-mask-image: radial-gradient(circle at center, #000 58%, transparent 80%);
+        mask-image: radial-gradient(circle at center, #000 58%, transparent 80%);
+      }
       @keyframes sonar {
         0% {
-          transform: scale(0.34);
+          transform: scale(0.28);
           opacity: 0.95;
         }
         100% {
-          transform: scale(1);
+          /* stops short of the window edge so the glow never reaches it */
+          transform: scale(0.82);
           opacity: 0;
         }
       }
       .ring {
         position: absolute;
-        inset: 8px;
+        inset: 26px;
         border-radius: 50%;
         border: 2px solid var(--ring, #e7edf3);
         box-shadow:

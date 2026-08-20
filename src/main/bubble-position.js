@@ -23,6 +23,16 @@ export function centerAnchor(workArea, box) {
   };
 }
 
+// "Encontrar a bolha" points at the bubble, it does not fetch it: a bubble
+// already on screen keeps its exact spot and only pulses. Recentering is for
+// the cases where there is nothing to point AT — no anchor yet, or a saved
+// spot on a display that went away — since moving a visible bubble makes the
+// user lose the place they chose for it.
+export function findBubbleAnchor({ anchor, displays, cursorWorkArea, box }) {
+  if (anchorVisible(anchor, displays, box)) return { anchor, moved: false };
+  return { anchor: centerAnchor(cursorWorkArea, box), moved: true };
+}
+
 // The find-the-bubble halo lives in its own bigger window (the bubble window
 // is exactly bubble-sized and would clip any glow square); this centers that
 // window on the bubble.
