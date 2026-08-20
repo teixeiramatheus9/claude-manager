@@ -102,6 +102,15 @@ window.manager.onClick(() => {
   if (view === 'bubble') togglePanel();
 });
 
+// "Encontrar a bolha": a short pulse so the eye finds the freshly centered
+// (or merely revealed, on Wayland) bubble.
+let spottedTimer = null;
+window.manager.onSpotted(() => {
+  bubble.classList.add('spotted');
+  clearTimeout(spottedTimer);
+  spottedTimer = setTimeout(() => bubble.classList.remove('spotted'), 1900);
+});
+
 // --- Notification chimes (synthesized: soft, short, no alarm vibes) ---
 const muteButton = document.getElementById('mute');
 let muted = false;

@@ -11,6 +11,10 @@ describe('trayMenuTemplate', () => {
     expect(ids({ bubbleVisible: false })).toContain('settings');
   });
 
+  it('offers to find a bubble that got lost off screen', () => {
+    expect(ids({ bubbleVisible: true })).toContain('find');
+  });
+
   it('offers to hide the bubble while it is on screen', () => {
     const toggle = trayMenuTemplate({ bubbleVisible: true }).find((item) => item.id === 'toggle');
     expect(toggle.label).toBe('Esconder a bolha');
