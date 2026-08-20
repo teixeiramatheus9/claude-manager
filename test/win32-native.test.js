@@ -3,7 +3,16 @@ import {
   psQuote,
   escapeSendKeys,
   parseWindowList,
+  parseProcessAncestors,
+  processAncestorsScript,
   listWindows,
+  listProcessAncestors,
+  getForegroundWindow,
+  foregroundWindowScript,
+  tabTitlesScript,
+  parseTabTitles,
+  readTabTitles,
+  walkWasAborted,
   activateWindowScript,
   sendKeysScript,
   encodeAnsiArgvText,
@@ -46,23 +55,23 @@ describe('escapeSendKeys', () => {
 });
 
 describe('parseWindowList', () => {
-  it('parses hwnd/exe/title TSV lines', () => {
-    const stdout = '132456\tWindowsTerminal\tclaude-manager — claude\n789\twarp\tWarp\n';
+  it('parses hwnd/pid/exe/title TSV lines', () => {
+    const stdout = '132456\t4242\tWindowsTerminal\tclaude-manager — claude\n789\t77\twarp\tWarp\n';
     expect(parseWindowList(stdout)).toEqual([
-      { id: '132456', class: 'windowsterminal', title: 'claude-manager — claude' },
-      { id: '789', class: 'warp', title: 'Warp' },
+      { id: '132456', pid: 4242, class: 'windowsterminal', title: 'claude-manager — claude' },
+      { id: '789', pid: 77, class: 'warp', title: 'Warp' },
     ]);
   });
   it('skips malformed lines', () => {
-    expect(parseWindowList('garbage\n\n42\texe\ttitle\n')).toEqual([
-      { id: '42', class: 'exe', title: 'title' },
+    expect(parseWindowList('garbage\n\n42\t7\texe\ttitle\n')).toEqual([
+      { id: '42', pid: 7, class: 'exe', title: 'title' },
     ]);
   });
 });
 
 describe('listWindows', () => {
   it('runs powershell and parses the output', async () => {
-    const execFn = vi.fn().mockResolvedValue({ stdout: '7\tWindowsTerminal\thello\n' });
+    const execFn = vi.fn().mockResolvedValue({ stdout: '7\t99\tWindowsTerminal\thello\n' });
     const windows = await listWindows({ execFn });
     expect(execFn).toHaveBeenCalledWith('powershell.exe', [
       '-NoProfile',
@@ -70,11 +79,88 @@ describe('listWindows', () => {
       '-Command',
       expect.stringContaining('EnumWindows'),
     ]);
-    expect(windows).toEqual([{ id: '7', class: 'windowsterminal', title: 'hello' }]);
+    expect(windows).toEqual([{ id: '7', pid: 99, class: 'windowsterminal', title: 'hello' }]);
   });
   it('returns [] when powershell fails', async () => {
     const execFn = vi.fn().mockRejectedValue(new Error('nope'));
     expect(await listWindows({ execFn })).toEqual([]);
+  });
+});
+
+describe('process ancestors', () => {
+  it('parseProcessAncestors reads one pid per line', () => {
+    expect(parseProcessAncestors('4242\r\n300\r\n7\r\n')).toEqual([4242, 300, 7]);
+  });
+  it('parseProcessAncestors skips non-numeric lines', () => {
+    expect(parseProcessAncestors('oops\n42\n\n')).toEqual([42]);
+  });
+  it('processAncestorsScript only accepts a numeric pid', () => {
+    expect(processAncestorsScript(4242)).toContain('4242');
+    expect(() => processAncestorsScript('42; rm x')).toThrow();
+  });
+  it('listProcessAncestors runs powershell and parses the chain', async () => {
+    const execFn = vi.fn().mockResolvedValue({ stdout: '4242\n300\n7\n' });
+    expect(await listProcessAncestors(4242, { execFn })).toEqual([4242, 300, 7]);
+  });
+  it('listProcessAncestors returns [] when powershell fails', async () => {
+    const execFn = vi.fn().mockRejectedValue(new Error('nope'));
+    expect(await listProcessAncestors(4242, { execFn })).toEqual([]);
+  });
+});
+
+describe('getForegroundWindow', () => {
+  it('asks user32 which window is in front', () => {
+    expect(foregroundWindowScript()).toContain('GetForegroundWindow');
+  });
+  it('returns the hwnd as a string', async () => {
+    const execFn = vi.fn().mockResolvedValue({ stdout: '1115836\r\n' });
+    expect(await getForegroundWindow({ execFn })).toBe('1115836');
+  });
+  it('returns null when powershell fails', async () => {
+    const execFn = vi.fn().mockRejectedValue(new Error('nope'));
+    expect(await getForegroundWindow({ execFn })).toBeNull();
+  });
+});
+
+describe('reading the tab titles in one pass', () => {
+  it('builds a script that jumps by index and guards the foreground', () => {
+    const script = tabTitlesScript('1115836', { maxTabs: 4, jumpKey: '^{n}' });
+    expect(script).toContain('1115836');
+    expect(script).toContain('GetForegroundWindow');
+    expect(script).toContain('^1');
+    expect(script).toContain('^4');
+  });
+
+  it('rejects a non-numeric hwnd', () => {
+    expect(() => tabTitlesScript('12; rm x', { maxTabs: 2, jumpKey: '^{n}' })).toThrow();
+  });
+
+  it('parses index/title pairs', () => {
+    expect(parseTabTitles('1\tprimeira\r\n2\tsegunda\r\n')).toEqual([
+      { index: 1, title: 'primeira' },
+      { index: 2, title: 'segunda' },
+    ]);
+  });
+
+  it('drops the ABORT marker the script emits when focus was lost', () => {
+    expect(parseTabTitles('1\tprimeira\nABORT\n')).toEqual([{ index: 1, title: 'primeira' }]);
+  });
+
+  it('readTabTitles returns [] when powershell fails', async () => {
+    const execFn = vi.fn().mockRejectedValue(new Error('nope'));
+    expect(await readTabTitles('123', { execFn, jumpKey: '^{n}' })).toEqual([]);
+  });
+
+  it('never builds a jump past index 9 — SendKeys reads ^10 as Ctrl+1 then "0"', () => {
+    const script = tabTitlesScript('1115836', { maxTabs: 12, jumpKey: '^{n}' });
+    expect(script).toContain('^9');
+    expect(script).not.toContain('^10');
+  });
+
+  it('flags a walk that was cut short by losing the foreground', () => {
+    expect(parseTabTitles('1\tprimeira\nABORT\n')).toEqual([{ index: 1, title: 'primeira' }]);
+    expect(walkWasAborted('1\tprimeira\nABORT\n')).toBe(true);
+    expect(walkWasAborted('1\tprimeira\n2\tsegunda\n')).toBe(false);
   });
 });
 

@@ -96,9 +96,42 @@ export function listWindowsScript() {
     '[WinEnum]::Windows() | ForEach-Object {',
     '  $parts = $_ -split "`t",3',
     "  $exe = try { (Get-Process -Id ([int]$parts[1]) -ErrorAction Stop).ProcessName } catch { '' }",
-    '  "$($parts[0])`t$exe`t$($parts[2])"',
+    '  "$($parts[0])`t$($parts[1])`t$exe`t$($parts[2])"',
     '}',
   ].join('\n');
+}
+
+// pids are interpolated into scripts, so they must be pure integers.
+function assertPid(pid) {
+  if (!/^\d+$/.test(String(pid))) throw new Error(`bad pid: ${pid}`);
+  return String(pid);
+}
+
+// Climbs the parent chain of a process (claude → shell → terminal), one pid
+// per output line. Capped and cycle-guarded: Windows recycles pids, so a
+// stale ParentProcessId can point anywhere.
+export function processAncestorsScript(pid) {
+  const start = assertPid(pid);
+  return [
+    `$current = ${start}`,
+    '$seen = @{}',
+    'for ($i = 0; $i -lt 20 -and $current -and -not $seen.ContainsKey($current)) {',
+    '  $seen[$current] = $true',
+    '  $current',
+    '  $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$current" -ErrorAction SilentlyContinue',
+    '  if (-not $proc) { break }',
+    '  $current = $proc.ParentProcessId',
+    '  $i++',
+    '}',
+  ].join('\n');
+}
+
+export function parseProcessAncestors(stdout) {
+  return String(stdout ?? '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /^\d+$/.test(line))
+    .map(Number);
 }
 
 // hwnd values are interpolated into scripts, so they must be pure integers.
@@ -128,6 +161,117 @@ export function activateWindowScript(id) {
   ].join('\n');
 }
 
+// SendKeys is global — it reaches whatever window is in front. Windows can
+// refuse SetForegroundWindow (foreground lock), so every injection has to
+// confirm the target actually got there, or the keys hit the user's browser.
+const FOREGROUND_TYPE = `
+using System;
+using System.Runtime.InteropServices;
+public class WinFg {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}`;
+
+export function foregroundWindowScript() {
+  return [
+    `Add-Type -TypeDefinition @'${'\n'}${FOREGROUND_TYPE}${'\n'}'@`,
+    '[WinFg]::GetForegroundWindow().ToInt64()',
+  ].join('\n');
+}
+
+export async function getForegroundWindow({ execFn = execFileAsync } = {}) {
+  try {
+    const { stdout } = await runPs(foregroundWindowScript(), execFn);
+    const value = String(stdout ?? '').trim();
+    return /^\d+$/.test(value) ? value : null;
+  } catch {
+    return null; // unknown foreground — the caller treats that as "do not type"
+  }
+}
+
+// Reading the tabs one PowerShell process per keypress costs ~200ms of startup
+// each — on a terminal with a few tabs that is seconds of visible flipping.
+// This walks every tab INSIDE one process (~65ms per tab) using the terminal's
+// own "go to tab N" shortcut, so the caller learns each tab's index in a single
+// round trip and can jump straight there next time. It re-checks the foreground
+// on every step: if the user clicks away mid-walk it stops instead of typing
+// into whatever took over. `jumpKey` is a SendKeys template with {n} for the
+// index (Warp: "^{n}", Windows Terminal: "^%{n}").
+// SendKeys reads "^10" as Ctrl+1 followed by a literal "0" — that stray digit
+// would land in the user's prompt — so the jump shortcuts stop at 9, which is
+// also where every terminal stops binding them.
+export const MAX_JUMP_TABS = 9;
+
+export function tabTitlesScript(id, { maxTabs = MAX_JUMP_TABS, jumpKey } = {}) {
+  const hwnd = assertHwnd(id);
+  const jumps = [];
+  for (let index = 1; index <= Math.min(maxTabs, MAX_JUMP_TABS); index++) {
+    const keys = String(jumpKey).replace('{n}', String(index));
+    jumps.push(
+      [
+        `  if ([WinTabs]::GetForegroundWindow() -ne $h) { 'ABORT'; break }`,
+        `  [System.Windows.Forms.SendKeys]::SendWait(${psQuote(keys)})`,
+        `  Start-Sleep -Milliseconds $delay`,
+        `  $title = Title`,
+        // the same title twice means the index ran past the last tab
+        `  if ($title -eq $previous) { break }`,
+        `  $previous = $title`,
+        `  "${index}\`t$title"`,
+      ].join('\n'),
+    );
+  }
+  return [
+    'Add-Type -AssemblyName System.Windows.Forms',
+    `Add-Type -TypeDefinition @'${'\n'}${TAB_WALK_TYPE}${'\n'}'@`,
+    `$h = [IntPtr]${hwnd}`,
+    '$delay = 90',
+    '$previous = $null',
+    'function Title { $sb = New-Object System.Text.StringBuilder 512; ' +
+      '[void][WinTabs]::GetWindowText($h, $sb, 512); $sb.ToString() }',
+    'do {',
+    jumps.join('\n'),
+    '} while ($false)',
+  ].join('\n');
+}
+
+const TAB_WALK_TYPE = `
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public class WinTabs {
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int c);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}`;
+
+// The walk stops and says ABORT when the user clicks away mid-walk. Losing
+// that fact would let the caller report "every tab was seen" after seeing one.
+export function walkWasAborted(stdout) {
+  return String(stdout ?? '')
+    .split('\n')
+    .some((line) => line.trim() === 'ABORT');
+}
+
+export function parseTabTitles(stdout) {
+  return String(stdout ?? '')
+    .split('\n')
+    .map((line) => line.replace(/\r$/, ''))
+    .map((line) => line.split('\t'))
+    .filter((parts) => parts.length === 2 && /^\d+$/.test(parts[0]))
+    .map(([index, title]) => ({ index: Number(index), title }));
+}
+
+export async function readTabTitles(id, { execFn = execFileAsync, ...options } = {}) {
+  try {
+    const { stdout } = await runPs(tabTitlesScript(id, options), execFn);
+    const tabs = parseTabTitles(stdout);
+    // aborted is carried on the array so the shape stays a plain list for
+    // every caller that only cares about the titles
+    tabs.aborted = walkWasAborted(stdout);
+    return tabs;
+  } catch {
+    return []; // no walk — the caller falls back to cycling with Ctrl+Tab
+  }
+}
+
 export function getWindowTitleScript(id) {
   const hwnd = assertHwnd(id);
   return [
@@ -154,8 +298,8 @@ export function parseWindowList(stdout) {
     .split('\n')
     .map((line) => line.replace(/\r$/, ''))
     .map((line) => line.split('\t'))
-    .filter((parts) => parts.length === 3 && /^\d+$/.test(parts[0]))
-    .map(([id, exe, title]) => ({ id, class: exe.toLowerCase(), title }));
+    .filter((parts) => parts.length === 4 && /^\d+$/.test(parts[0]) && /^\d+$/.test(parts[1]))
+    .map(([id, pid, exe, title]) => ({ id, pid: Number(pid), class: exe.toLowerCase(), title }));
 }
 
 export async function listWindows({ execFn = execFileAsync } = {}) {
@@ -164,6 +308,15 @@ export async function listWindows({ execFn = execFileAsync } = {}) {
     return parseWindowList(stdout);
   } catch {
     return []; // powershell missing/blocked — the caller names the cause
+  }
+}
+
+export async function listProcessAncestors(pid, { execFn = execFileAsync } = {}) {
+  try {
+    const { stdout } = await runPs(processAncestorsScript(pid), execFn);
+    return parseProcessAncestors(stdout);
+  } catch {
+    return []; // bad pid or powershell blocked — the hunt just stays unscoped
   }
 }
 
