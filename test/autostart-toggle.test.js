@@ -41,7 +41,7 @@ describe('desktopEntry', () => {
   });
 
   it('lets the desktop match the running window to the entry', () => {
-    expect(entry).toContain('StartupWMClass=claude-manager');
+    expect(entry).toContain('StartupWMClass=vizor');
     expect(entry).toContain('Icon=/opt/x/icon.png');
   });
 });
@@ -75,6 +75,6 @@ describe('applyLinuxAutostart', () => {
 
 describe('autostartFilePath', () => {
   it('lives in the user autostart dir under the app name', () => {
-    expect(autostartFilePath('/home/u')).toBe('/home/u/.config/autostart/claude-manager.desktop');
+    expect(autostartFilePath('/home/u')).toBe('/home/u/.config/autostart/vizor.desktop');
   });
 });

@@ -60,7 +60,7 @@ export function runClaude({
           commands[index],
           ['-p', prompt, '--model', 'haiku', '--output-format', 'json'],
           {
-            env: { ...process.env, CLAUDE_MANAGER_INTERNAL: '1' },
+            env: { ...process.env, VIZOR_INTERNAL: '1', CLAUDE_MANAGER_INTERNAL: '1' },
             stdio: ['ignore', 'pipe', 'ignore'],
           },
         );

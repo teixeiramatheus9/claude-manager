@@ -45,7 +45,7 @@ describe('buildDesktopEntry', () => {
     expect(entry).toContain('[Desktop Entry]');
     expect(entry).toContain('Type=Application');
     expect(entry).toContain('Icon=/home/user/Claude Manager/assets/icon.png');
-    expect(entry).toContain('StartupWMClass=claude-manager');
+    expect(entry).toContain('StartupWMClass=vizor');
     expect(entry).toContain('X-GNOME-Autostart-enabled=true');
   });
 });

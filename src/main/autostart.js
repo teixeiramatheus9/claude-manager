@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 export function autostartFilePath(home = os.homedir()) {
-  return path.join(home, '.config', 'autostart', 'claude-manager.desktop');
+  return path.join(home, '.config', 'autostart', 'vizor.desktop');
 }
 
 // Which command line boots this install at login. AppImages must relaunch the
@@ -23,12 +23,12 @@ export function desktopEntry({ execLine: exec, iconPath }) {
   return [
     '[Desktop Entry]',
     'Type=Application',
-    'Name=Claude Manager',
+    'Name=Vizor',
     'Comment=Gerente flutuante das sessões do Claude Code',
     `Exec=${exec}`,
     ...(iconPath ? [`Icon=${iconPath}`] : []),
     // Lets the desktop match the running window to this entry.
-    'StartupWMClass=claude-manager',
+    'StartupWMClass=vizor',
     'X-GNOME-Autostart-enabled=true',
     'NoDisplay=false',
     'Terminal=false',

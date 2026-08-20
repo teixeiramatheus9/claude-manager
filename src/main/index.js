@@ -34,6 +34,7 @@ import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
 import { anchorVisible, centerAnchor, spotlightBounds } from './bubble-position.js';
 import { sanitizeShortcuts } from './shortcuts.js';
 import { applyLinuxAutostart, autostartFilePath, desktopEntry, execLine } from './autostart.js';
+import { legacyAutostartFile, legacyConfigDir, migrateLegacyInstall } from './migration.js';
 import { setupUpdater } from './updater.js';
 import { detectTrayHost, trayMenuTemplate } from './tray.js';
 import { installTraySupport, shouldInstallTraySupport } from './tray-support.js';
@@ -104,7 +105,7 @@ const canPositionWindows = displayMode.managed;
 // The AppImage launcher drops build.linux.executableArgs, so a packaged run can
 // arrive here without the switch and silently lose the overlay. Relaunch once
 // with it; the env marker is inherited by the new process and stops any loop.
-const OZONE_RELAUNCH_MARKER = 'CLAUDE_MANAGER_OZONE_RELAUNCHED';
+const OZONE_RELAUNCH_MARKER = 'VIZOR_OZONE_RELAUNCHED';
 
 function relaunchUnderX11IfNeeded() {
   const needed = shouldRelaunchUnderX11({
@@ -125,7 +126,7 @@ function relaunchUnderX11IfNeeded() {
 
 // Associates the running window with the installed .desktop entry so desktop
 // environments show the right icon/name for packaged builds.
-app.setDesktopName?.('claude-manager.desktop');
+app.setDesktopName?.('vizor.desktop');
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const rendererDir = path.join(currentDir, '..', 'renderer');
@@ -158,6 +159,16 @@ const PRUNE_INTERVAL_MS = 10 * 60 * 1000;
 // Short, because a closed terminal should leave the list right away rather
 // than sit there claiming the chat is still working.
 const LIVENESS_INTERVAL_MS = 15 * 1000;
+
+// Rebrand adoption runs before the first config read: the claude-manager dir
+// carries the user's position, sessions, settings and downloaded voices.
+migrateLegacyInstall({
+  legacyDir: legacyConfigDir(),
+  targetDir: configDir,
+  legacyAutostart: legacyAutostartFile(),
+  enableAutostart: () => setAutostart(true),
+  log,
+});
 
 const registry = new SessionRegistry();
 let managerConfig = loadConfig(configFile);
@@ -272,7 +283,7 @@ function onUpdateStatus(status) {
   if (version && announcedUpdateVersion !== version) {
     announcedUpdateVersion = version;
     sendToRenderer('tooltip', {
-      projectName: 'Claude Manager',
+      projectName: 'Vizor',
       text: managerConfig.autoUpdate
         ? `Versão v${version} — vou me atualizar sozinho.`
         : status.ready
@@ -543,7 +554,7 @@ async function setupTray() {
     return;
   }
   tray = new Tray(trayIconPath);
-  tray.setToolTip('Claude Manager');
+  tray.setToolTip('Vizor');
   // GNOME's appindicator has no activate signal — a left click just opens the
   // menu — so the menu carries every action instead of relying on this.
   tray.on('click', () => {
@@ -924,13 +935,13 @@ async function renewMacosGrantAfterUpdate() {
     const nowGranted = systemPreferences.isTrustedAccessibilityClient(false);
     if (accessibilityLostAfterUpdate(memory, nowGranted)) {
       log('macos accessibility lost after update — resetting stale TCC entries');
-      await resetAccessibilityEntries('io.github.teixeiramatheus9.claude-manager');
+      await resetAccessibilityEntries('io.github.teixeiramatheus9.vizor');
       systemPreferences.isTrustedAccessibilityClient(true);
       const note = new Notification({
         title: 'A atualização renovou minha identidade',
         body:
           'O macOS zerou a permissão de Acessibilidade na atualização. ' +
-          'Reative o Claude Manager lá que volto a te levar pra aba certa.',
+          'Reative o Vizor lá que volto a te levar pra aba certa.',
       });
       note.on('click', () => shell.openExternal(ACCESSIBILITY_PANE));
       note.show();
@@ -959,14 +970,14 @@ async function nudgeMacosPermissions() {
       // Start from clean rows: piled-up dead entries leave the pane showing a
       // toggled-on ghost next to the real ask (harmless when there are none).
       if (app.isPackaged) {
-        await resetAccessibilityEntries('io.github.teixeiramatheus9.claude-manager');
+        await resetAccessibilityEntries('io.github.teixeiramatheus9.vizor');
       }
       systemPreferences.isTrustedAccessibilityClient(true);
     }
     const note = new Notification({
       title: 'O gerente precisa de uma permissão',
       body:
-        'Pra te levar direto pra aba do chat, ative o Claude Manager em ' +
+        'Pra te levar direto pra aba do chat, ative o Vizor em ' +
         'Acessibilidade (e em Automação) na Privacidade e Segurança.',
     });
     note.on('click', () => {
@@ -1145,7 +1156,7 @@ function readClaudeSettings() {
 // config, not the app's own.
 function writeClaudeSettings(next) {
   if (fs.existsSync(claudeSettingsPath)) {
-    fs.copyFileSync(claudeSettingsPath, `${claudeSettingsPath}.claude-manager-${Date.now()}.bak`);
+    fs.copyFileSync(claudeSettingsPath, `${claudeSettingsPath}.vizor-${Date.now()}.bak`);
   }
   fs.mkdirSync(path.dirname(claudeSettingsPath), { recursive: true });
   fs.writeFileSync(claudeSettingsPath, `${JSON.stringify(next, null, 2)}\n`);

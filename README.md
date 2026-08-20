@@ -1,4 +1,4 @@
-# Claude Manager
+# Vizor
 
 Gerente flutuante das sessões do Claude Code. Uma bolha sempre-por-cima na tela
 avisa quando um chat termina a tarefa ou fica esperando você, mostra um
@@ -95,23 +95,23 @@ Diferenças em relação ao Linux:
   ativados (sem foco de aba).
 - Resposta rápida e chips digitam via System Events: dê permissão de
   **Acessibilidade** ao app (Ajustes do Sistema → Privacidade e Segurança →
-  Acessibilidade → Electron/Claude Manager). Sem a permissão, a resposta cai
+  Acessibilidade → Electron/Vizor). Sem a permissão, a resposta cai
   no clipboard.
 - `npm run autostart:install` cria um LaunchAgent em `~/Library/LaunchAgents`.
 - `npm run dist:mac` gera o `.dmg` em `dist/`. O app não é assinado: na
   primeira abertura use botão direito → Abrir (ou
-  `xattr -dr com.apple.quarantine "/Applications/Claude Manager.app"`).
+  `xattr -dr com.apple.quarantine "/Applications/Vizor.app"`).
 
 ## Windows
 
-Funciona nativo no Windows. Instale pelo `Claude Manager Setup <versão>.exe`
+Funciona nativo no Windows. Instale pelo `Vizor Setup <versão>.exe`
 das releases (o app se atualiza sozinho a partir daí) ou, no repo,
 `npm install && npm run hooks:install && npm run start:win`.
 Diferenças em relação ao Linux:
 
-- Os hooks falam com o app por um named pipe (`\\.\pipe\claude-manager-<user>`)
+- Os hooks falam com o app por um named pipe (`\\.\pipe\vizor-<user>`)
   e se registram sozinhos na primeira execução via um shim `hook-emit.cmd` em
-  `~/.config/claude-manager/`.
+  `~/.config/vizor/`.
 - Enquanto a voz neural baixa, fala com a voz do sistema (Microsoft Maria).
 - Foco de chat: acha a janela do terminal pelo título (Windows Terminal, Warp,
   WaveTerm, Alacritty, WezTerm) e caça a aba com Ctrl+Tab; a resposta rápida
@@ -139,4 +139,13 @@ e tire o `--no-sandbox` do script `start`.
 
 ## Arquivos de runtime
 
-`~/.config/claude-manager/` → `manager.sock`, `state.json` (posição da bolha), `log`.
+`~/.config/vizor/` → `vizor.sock`, `state.json` (posição da bolha), `log`.
+
+## Vindo do Claude Manager?
+
+O Vizor é o mesmo app renomeado. Na primeira subida ele **migra tudo sozinho**:
+adota o `~/.config/claude-manager/` inteiro (posição da bolha, sessões,
+configurações e as vozes já baixadas), troca os hooks do Claude Code pelos
+novos e renova o atalho de autostart. No Linux, instalar o pacote `vizor`
+remove o `claude-manager` antigo (deb/rpm declaram a substituição). No macOS,
+remova o app antigo à mão: `rm -rf "/Applications/Claude Manager.app"`.

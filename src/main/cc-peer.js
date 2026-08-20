@@ -15,7 +15,7 @@ const SEND_TIMEOUT_MS = 4000;
 // only accepts [A-Za-z0-9%:_/.\-] here, and the value doubles as a reply
 // address for sessions that run a listening socket — this app does not, so it
 // is a pure identity: the user's own quick reply, relayed verbatim.
-export const PEER_FROM = 'claude-manager/resposta-do-usuario';
+export const PEER_FROM = 'vizor/resposta-do-usuario';
 
 export function buildFrames({ text, token, msgId, priority }) {
   const frames = [];
