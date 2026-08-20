@@ -202,6 +202,80 @@ describe('focusChatTab', () => {
   });
 });
 
+describe('exact focus via the captured terminal identity', () => {
+  const KITTY_TERM = { KITTY_WINDOW_ID: '3', KITTY_LISTEN_ON: 'unix:/tmp/kitty-sock' };
+  const KITTY_WINDOWS = [
+    { id: '0x7', wmClass: 'kitty', title: 'fix-exames — claude' },
+    ...DEFAULT_WINDOWS,
+  ];
+
+  it('selects the kitty tab through its CLI and just raises the window', async () => {
+    const { execFn, calls } = fakeExec({ windows: KITTY_WINDOWS });
+    const result = await focusChatTab('chat-inexistente-xyz', {
+      execFn,
+      delayMs: 0,
+      term: KITTY_TERM,
+    });
+    expect(result).toEqual({
+      focused: true,
+      tabFound: true,
+      matchedTitle: 'fix-exames — claude',
+      cause: null,
+    });
+    expect(calls[0]).toEqual({
+      command: 'kitty',
+      args: ['@', '--to', 'unix:/tmp/kitty-sock', 'focus-window', '--match', 'id:3'],
+    });
+    expect(calls).toEqual(
+      expect.arrayContaining([{ command: 'xdotool', args: ['windowactivate', '0x7'] }]),
+    );
+    expect(keyPressesOf(calls)).toHaveLength(0);
+  });
+
+  it('outranks the configured terminal — the capture proves where the session lives', async () => {
+    const { execFn, calls } = fakeExec({ windows: KITTY_WINDOWS });
+    const result = await focusChatTab('chat-inexistente-xyz', {
+      execFn,
+      delayMs: 0,
+      terminal: 'warp',
+      term: KITTY_TERM,
+    });
+    expect(result.tabFound).toBe(true);
+    expect(calls).toEqual(
+      expect.arrayContaining([{ command: 'xdotool', args: ['windowactivate', '0x7'] }]),
+    );
+  });
+
+  it('still hunts the host window by title after selecting a tmux pane', async () => {
+    const { execFn, calls } = fakeExec();
+    const result = await focusChatTab('projeto-alpha', {
+      execFn,
+      delayMs: 0,
+      term: { TMUX: '/tmp/tmux-1000/default,1234,0', TMUX_PANE: '%5' },
+    });
+    // the pane got selected inside tmux...
+    expect(calls.filter((call) => call.command === 'tmux').map((call) => call.args[2])).toEqual([
+      'select-window',
+      'select-pane',
+      'switch-client',
+    ]);
+    // ...and the OS window still comes from the normal title hunt
+    expect(result.tabFound).toBe(true);
+    expect(result.matchedTitle).toBe('projeto-alpha — claude');
+  });
+
+  it('falls back to the title hunt when the exact CLI fails', async () => {
+    const { execFn } = fakeExec({ failOn: ['kitty'] });
+    const result = await focusChatTab('projeto-alpha', {
+      execFn,
+      delayMs: 0,
+      term: KITTY_TERM,
+    });
+    expect(result.tabFound).toBe(true);
+    expect(result.matchedTitle).toBe('projeto-alpha — claude');
+  });
+});
+
 // On Wayland the compositor gates XTEST behind the RemoteDesktop portal, so
 // pressing keys both prompts the user for remote access AND silently fails.
 // The app passes allowInputInjection:false there: window activation still works

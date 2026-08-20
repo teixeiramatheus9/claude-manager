@@ -37,6 +37,7 @@ import { log } from './log.js';
 import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
 import {
   readSessionChannel,
+  readSessionPid,
   readLiveSessionIds,
   readAdoptableSessions,
   claudeTranscriptPath,
@@ -647,12 +648,24 @@ function sessionSearchKeys(session) {
   ];
 }
 
+// Everything the platform module needs to hit the exact tab: the identity the
+// hook captured from the session's env, and the live claude pid (its tty is
+// how macOS finds the tab in Terminal.app/iTerm2).
+function sessionFocusTarget(session) {
+  return {
+    wave: session?.wave,
+    term: session?.term,
+    sessionPid: session?.id ? readSessionPid(session.id) : null,
+  };
+}
+
 async function huntSessionTab(session) {
   const result = await terminal.focusChatTab(sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
-    wave: session?.wave,
+    ...sessionFocusTarget(session),
   });
+  log(`focus ${session?.id?.slice(0, 8)}: ${JSON.stringify(result)}`);
   if (session?.id) {
     if (result.tabFound && result.matchedTitle) {
       matchedTitleCache.set(session.id, result.matchedTitle);
@@ -702,7 +715,7 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const result = await terminal.answerQuestionInWarp(sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
-    wave: session?.wave,
+    ...sessionFocusTarget(session),
   });
   if (result === 'answered') registry.markAnswered(sessionId);
   return result;
@@ -729,7 +742,7 @@ async function replyToSession(session, text) {
     writeClipboard: (value) => clipboard.writeText(value),
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
-    wave: session?.wave,
+    ...sessionFocusTarget(session),
   });
 }
 

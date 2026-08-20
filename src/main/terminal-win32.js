@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as nativeDefault from './win32-native.js';
 import { titleMatchesKeys } from './warp.js';
+import { selectExactTab, readWaveTabIndex, VIA_APP_HINTS } from './terminal-target.js';
 
 const execFileAsync = promisify(execFile);
 const REPLY_TYPE_DELAY_MS = 350;
@@ -70,6 +71,7 @@ export async function focusChatTab(
     terminal = 'auto',
     allowInputInjection = true,
     wave,
+    term,
   } = {},
 ) {
   try {
@@ -95,6 +97,15 @@ export async function focusChatTab(
       const waveWindow = windows.find((window) => window.class.toLowerCase().includes('wave'));
       if (waveWindow) {
         await native.activateWindow(waveWindow.id, { execFn });
+        // wsh focusblock only reaches blocks in the ACTIVE tab, so the block's
+        // tab has to become active first: Ctrl+<n> is Wave's own "switch to
+        // tab" binding, and the index comes from Wave's DB — no cycling.
+        const tab = await readWaveTabIndex(wave.tabId, { execFn });
+        if (tab && !tab.active && tab.index < 9 && allowInputInjection) {
+          await sleep(delayMs);
+          await native.sendKeys(`^${tab.index + 1}`, { execFn });
+          await sleep(delayMs);
+        }
         try {
           await execFn(wshBinary(), ['focusblock', '-b', wave.blockId], {
             env: {
@@ -109,6 +120,22 @@ export async function focusChatTab(
           // block gone or wsh unavailable — the window itself is focused
           return { focused: true, tabFound: false, matchedTitle: null, cause: null };
         }
+      }
+    }
+
+    // Exact route: the terminal's own CLI (WezTerm here) selects the session's
+    // pane from the identity the hook captured; Win32 then raises its window.
+    // The capture outranks the configured terminal — it proves where the
+    // session actually lives.
+    const exact = await selectExactTab(term, { execFn });
+    const exactExeHint = exact.selected ? VIA_APP_HINTS[exact.via]?.exeHint : null;
+    if (exactExeHint) {
+      const exactWindow = windows.find((window) =>
+        window.class.toLowerCase().includes(exactExeHint),
+      );
+      if (exactWindow) {
+        await native.activateWindow(exactWindow.id, { execFn });
+        return { focused: true, tabFound: true, matchedTitle: exactWindow.title, cause: null };
       }
     }
 
@@ -164,6 +191,7 @@ export async function answerQuestionInWarp(
     terminal = 'auto',
     allowInputInjection = true,
     wave,
+    term,
   } = {},
 ) {
   const { focused, tabFound } = await focusChatTab(searchKeys, {
@@ -173,6 +201,7 @@ export async function answerQuestionInWarp(
     terminal,
     allowInputInjection,
     wave,
+    term,
   });
   // The terminal is focused either way, so the user can answer by hand.
   if (!allowInputInjection) return 'needs-terminal';
@@ -201,6 +230,7 @@ export async function sendReplyToWarp(
     terminal = 'auto',
     allowInputInjection = true,
     wave,
+    term,
   } = {},
 ) {
   const clipboardFallback = () => {
@@ -219,6 +249,7 @@ export async function sendReplyToWarp(
     terminal,
     allowInputInjection,
     wave,
+    term,
   });
   if (!focused || !tabFound) return clipboardFallback();
   if (!allowInputInjection) return clipboardFallback();

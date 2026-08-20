@@ -6,6 +6,7 @@ import {
   procStartFromStat,
   parsePeerKey,
   readSessionChannel,
+  readSessionPid,
   readLiveSessionIds,
   readAdoptableSessions,
   claudeTranscriptPath,
@@ -117,6 +118,50 @@ describe('claude code session registry', () => {
       },
     });
     expect(channel).toBeNull();
+  });
+});
+
+describe('session pid lookup', () => {
+  it('resolves a live session to its pid regardless of the messaging gate', () => {
+    // no peerProtocol/socket in the record: the pid is still good for the tty
+    const record = JSON.stringify({ pid: 103483, sessionId: SESSION_ID, procStart: '43021813' });
+    const pid = readSessionPid(SESSION_ID, {
+      readdirSync: () => ['103483.json'],
+      readFileSync: () => record,
+      procStartFor: () => '43021813',
+      isAlive: () => true,
+    });
+    expect(pid).toBe(103483);
+  });
+
+  it('rejects a dead process and a recycled pid', () => {
+    const options = {
+      readdirSync: () => ['103483.json'],
+      readFileSync: () => RECORD,
+      procStartFor: () => '43021813',
+      isAlive: () => false,
+    };
+    expect(readSessionPid(SESSION_ID, options)).toBeNull();
+    expect(
+      readSessionPid(SESSION_ID, { ...options, isAlive: () => true, procStartFor: () => '9' }),
+    ).toBeNull();
+  });
+
+  it('returns null for an unknown session or a missing registry', () => {
+    expect(
+      readSessionPid('nope', {
+        readdirSync: () => ['103483.json'],
+        readFileSync: () => RECORD,
+        isAlive: () => true,
+      }),
+    ).toBeNull();
+    expect(
+      readSessionPid(SESSION_ID, {
+        readdirSync: () => {
+          throw new Error('ENOENT');
+        },
+      }),
+    ).toBeNull();
   });
 });
 
