@@ -33,4 +33,5 @@ contextBridge.exposeInMainWorld('manager', {
   onOpenSettings: (callback) => ipcRenderer.on('ui:open-settings', () => callback()),
   onClick: (callback) => ipcRenderer.on('ui:click', () => callback()),
   onSpotted: (callback) => ipcRenderer.on('ui:spotted', () => callback()),
+  onOpenChat: (callback) => ipcRenderer.on('ui:open-chat', () => callback()),
 });

@@ -29,6 +29,7 @@ import { VOICES } from './sherpa-installer.js';
 import { THEMES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
 import { anchorVisible, centerAnchor } from './bubble-position.js';
+import { sanitizeShortcuts } from './shortcuts.js';
 import { setupUpdater } from './updater.js';
 import { detectTrayHost, trayMenuTemplate } from './tray.js';
 import { installTraySupport, shouldInstallTraySupport } from './tray-support.js';
@@ -171,6 +172,7 @@ function sendState() {
     trayAvailable: Boolean(tray),
     trayNeedsRelogin,
     crt: managerConfig.crt,
+    shortcuts: { values: managerConfig.shortcuts, failed: shortcutFailures },
     sound: {
       muted: managerConfig.muted,
       volume: managerConfig.soundVolume,
@@ -330,6 +332,45 @@ function findBubble() {
   }
   stayOnTop(mainWindow);
   sendToRenderer('ui:spotted');
+}
+
+// Registers the configured global shortcuts, dropping whatever was bound
+// before. Failures (combo taken by the system, or a Wayland compositor that
+// refuses global shortcuts) are reported through state so the settings panel
+// can say which ones did not take — the tray menu stays the fallback.
+let shortcutFailures = [];
+
+function applyShortcuts() {
+  globalShortcut.unregisterAll();
+  const actions = {
+    panel: () => {
+      if (overlayMode === 'panel') {
+        hideOverlay();
+        return;
+      }
+      showBubble();
+      openPanel();
+    },
+    bubble: () => (bubbleVisible() ? hideToTray() : showBubble()),
+    find: findBubble,
+    chat: () => {
+      showBubble();
+      openPanel();
+      sendToRenderer('ui:open-chat');
+    },
+  };
+  shortcutFailures = [];
+  for (const [id, accelerator] of Object.entries(managerConfig.shortcuts ?? {})) {
+    if (!accelerator || !actions[id]) continue;
+    let registered = false;
+    try {
+      registered = globalShortcut.register(accelerator, actions[id]);
+    } catch {
+      registered = false;
+    }
+    if (!registered) shortcutFailures.push(id);
+  }
+  if (shortcutFailures.length) log(`shortcuts not registered: ${shortcutFailures.join(', ')}`);
 }
 
 function refreshTrayMenu() {
@@ -668,6 +709,9 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (Number.isFinite(partial?.tokenBudgetDaily)) {
     allowed.tokenBudgetDaily = Math.max(0, Math.round(partial.tokenBudgetDaily));
   }
+  if (partial?.shortcuts && typeof partial.shortcuts === 'object') {
+    allowed.shortcuts = sanitizeShortcuts(partial.shortcuts, managerConfig.shortcuts);
+  }
   managerConfig = { ...managerConfig, ...allowed };
   try {
     saveConfig(configFile, managerConfig);
@@ -678,6 +722,10 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (allowed.panelScale && overlayMode === 'panel') showOverlay('panel', { focus: true });
   // Speaking the sample also pulls the model when it is not there yet.
   if (allowed.voice) tts.speak('Voz trocada. Agora eu falo assim!', { voice: allowed.voice });
+  if (allowed.shortcuts) {
+    applyShortcuts();
+    sendState(); // failures are only known after the re-register
+  }
   return managerConfig;
 });
 
@@ -985,11 +1033,7 @@ app.whenReady().then(() => {
   setInterval(() => registry.prune(), PRUNE_INTERVAL_MS);
   setInterval(reapDeadSessions, LIVENESS_INTERVAL_MS);
   updaterHandle = setupUpdater({ onStatus: onUpdateStatus, log });
-  // Wayland compositors may refuse global shortcuts; the tray item stays the
-  // fallback way to find the bubble.
-  if (!globalShortcut.register('CommandOrControl+Alt+B', findBubble)) {
-    log('find-bubble shortcut not registered (taken or unsupported in this session)');
-  }
+  applyShortcuts();
 });
 
 app.on('will-quit', () => globalShortcut.unregisterAll());

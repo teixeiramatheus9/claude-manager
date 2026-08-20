@@ -3,6 +3,7 @@ import path from 'node:path';
 import { DEFAULT_VOICE } from './sherpa-installer.js';
 import { DEFAULT_THEME } from './themes.js';
 import { PANEL_SCALE } from './panel-size.js';
+import { DEFAULT_SHORTCUTS } from './shortcuts.js';
 
 export const DEFAULT_CONFIG = {
   terminal: 'auto',
@@ -17,6 +18,7 @@ export const DEFAULT_CONFIG = {
   ttsEnabled: false,
   typeVolumes: { start: 100, done: 100, question: 100, waiting: 100 },
   tokenBudgetDaily: 100000,
+  shortcuts: { ...DEFAULT_SHORTCUTS },
 };
 
 export function loadConfig(file) {

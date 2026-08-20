@@ -844,6 +844,27 @@
         line-height: 1.5;
         color: var(--dim);
       }
+      .shortcut-input {
+        flex: 1;
+        min-width: 0;
+        background: none;
+        border: 0;
+        border-bottom: 1px dashed var(--track);
+        outline: none;
+        font: inherit;
+        font-size: 11.5px;
+        color: var(--text-2);
+        text-align: right;
+        cursor: pointer;
+      }
+      .shortcut-input:focus {
+        border-bottom-color: var(--accent);
+        color: var(--text);
+      }
+      .shortcut-input.failed {
+        color: var(--warn);
+        border-bottom-color: var(--warn);
+      }
       #update-check-feedback:empty {
         display: none;
       }
@@ -1239,6 +1260,24 @@
           <input id="crt" type="checkbox" />
           <span id="crt-state">[off]</span>
         </label>
+        <div class="setting-subtitle"># atalhos globais</div>
+        <label class="setting-row">
+          <span>abrir/fechar o painel</span>
+          <input class="shortcut-input" data-shortcut="panel" readonly placeholder="clique e tecle" />
+        </label>
+        <label class="setting-row">
+          <span>mostrar/esconder a bolha</span>
+          <input class="shortcut-input" data-shortcut="bubble" readonly placeholder="clique e tecle" />
+        </label>
+        <label class="setting-row">
+          <span>encontrar a bolha</span>
+          <input class="shortcut-input" data-shortcut="find" readonly placeholder="clique e tecle" />
+        </label>
+        <label class="setting-row">
+          <span>abrir o chat do gerente</span>
+          <input class="shortcut-input" data-shortcut="chat" readonly placeholder="clique e tecle" />
+        </label>
+        <div class="setting-hint" id="shortcuts-hint">backspace limpa o atalho</div>
         <div class="setting-subtitle"># terminal e voz</div>
         <label class="setting-row">
           <span>terminal</span>

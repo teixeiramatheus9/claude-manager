@@ -374,6 +374,10 @@ settingsButton.addEventListener('click', () => {
 
 // "Configurações" in the tray menu lands straight here.
 window.manager.onOpenSettings(() => setSettingsOpen(true));
+window.manager.onOpenChat(() => {
+  setChatOpen(true);
+  renderHeaderPath();
+});
 // The preview plays right away, so the local value moves first: waiting for
 // the config round trip would preview the volume you just left behind.
 volumeInput.addEventListener('change', () => {
@@ -585,6 +589,74 @@ crtCheckbox.addEventListener('change', () => {
   applyCrt(crtCheckbox.checked);
   window.manager.setConfig({ crt: crtCheckbox.checked });
 });
+
+// --- global shortcuts: click a field, press the combo, done ---------------
+const shortcutInputs = [...document.querySelectorAll('.shortcut-input')];
+const shortcutsHint = document.getElementById('shortcuts-hint');
+const SHORTCUT_LABELS = {
+  panel: 'painel',
+  bubble: 'bolha',
+  find: 'encontrar',
+  chat: 'chat',
+};
+
+// KeyboardEvent -> electron accelerator ('Ctrl+Alt+B'). Null when the combo
+// has no modifier (a bare key would hijack typing) or no real key yet.
+function acceleratorFromKeyEvent(event) {
+  const modifiers = [];
+  if (event.ctrlKey) modifiers.push('Ctrl');
+  if (event.altKey) modifiers.push('Alt');
+  if (event.shiftKey) modifiers.push('Shift');
+  if (event.metaKey) modifiers.push('Super');
+  if (!modifiers.length) return null;
+  const special = {
+    ' ': 'Space',
+    ArrowUp: 'Up',
+    ArrowDown: 'Down',
+    ArrowLeft: 'Left',
+    ArrowRight: 'Right',
+    Escape: 'Esc',
+    '+': 'Plus',
+  };
+  const { key } = event;
+  if (['Control', 'Alt', 'Shift', 'Meta', 'AltGraph'].includes(key)) return null;
+  const normalized =
+    special[key] ??
+    (/^[a-z]$/i.test(key) ? key.toUpperCase() : /^(F\d{1,2}|[0-9]|Tab|Home|End|PageUp|PageDown|Insert|Delete|Enter)$/.test(key) || key.length === 1 ? key : null);
+  return normalized ? [...modifiers, normalized].join('+') : null;
+}
+
+function applyShortcuts(shortcuts) {
+  if (!shortcuts) return;
+  const failed = shortcuts.failed ?? [];
+  for (const input of shortcutInputs) {
+    const id = input.dataset.shortcut;
+    // A field being typed into shows the live combo, not the stored one.
+    if (document.activeElement !== input) input.value = shortcuts.values?.[id] ?? '';
+    input.classList.toggle('failed', failed.includes(id));
+  }
+  shortcutsHint.textContent = failed.length
+    ? `em uso pelo sistema: ${failed.map((id) => SHORTCUT_LABELS[id] ?? id).join(', ')}`
+    : 'backspace limpa o atalho';
+}
+
+for (const input of shortcutInputs) {
+  input.addEventListener('keydown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === 'Backspace' || event.key === 'Delete') {
+      input.value = '';
+      window.manager.setConfig({ shortcuts: { [input.dataset.shortcut]: '' } });
+      input.blur();
+      return;
+    }
+    const accelerator = acceleratorFromKeyEvent(event);
+    if (!accelerator) return;
+    input.value = accelerator;
+    window.manager.setConfig({ shortcuts: { [input.dataset.shortcut]: accelerator } });
+    input.blur();
+  });
+}
 for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
@@ -1084,6 +1156,7 @@ function applySound(sound) {
 window.manager.onState((state) => {
   applyTheme(state.theme);
   applyCrt(state.crt);
+  applyShortcuts(state.shortcuts);
   applySound(state.sound);
   renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);
