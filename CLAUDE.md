@@ -35,8 +35,10 @@ App Electron (src/main/index.js)
   ├── claude-cli.js        → runner compartilhado com contagem real de tokens
   ├── token-budget.js      → teto diário de tokens / modo economia
   ├── display-mode.js      → decide modo managed (XWayland) vs Wayland (puro)
-  ├── cc-sessions.js       → resolve sessionId → socket/token do Claude Code
+  ├── cc-sessions.js       → resolve sessionId → socket/token/pid do Claude Code
   ├── cc-peer.js           → cliente NDJSON do socket da sessão
+  ├── terminal-target.js   → foco EXATO de aba via CLI do terminal (kitty/wezterm/tmux),
+  │                          com a identidade que o hook capturou do env da sessão
   ├── warp.js              → FALLBACK: foco de janela/aba do terminal (xdotool)
   └── renderer (app.*)     → bolha, tooltip, painel, chat, configurações
 ```
