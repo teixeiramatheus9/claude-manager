@@ -28,6 +28,26 @@ export function parseLastAssistantMessage(jsonlText) {
   return null;
 }
 
+// Claude Code titles the chat itself ("ai-title" entries) and pushes that same
+// string to the terminal — so it is THE text a tab running the session shows.
+export function parseAiTitle(jsonlText) {
+  const lines = jsonlText.split('\n');
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index].trim();
+    if (!line) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry?.type !== 'ai-title' || typeof entry.aiTitle !== 'string') continue;
+    const title = entry.aiTitle.trim();
+    if (title) return title;
+  }
+  return null;
+}
+
 function isAssistantEntry(entry) {
   return entry?.type === 'assistant' || entry?.message?.role === 'assistant';
 }
@@ -141,6 +161,14 @@ export async function readTranscriptSnapshot(transcriptPath) {
     };
   } catch {
     return { lastAssistantMessage: null, pendingQuestion: null };
+  }
+}
+
+export async function readAiTitle(transcriptPath) {
+  try {
+    return parseAiTitle(await readTail(transcriptPath));
+  } catch {
+    return null;
   }
 }
 
