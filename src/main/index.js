@@ -372,6 +372,10 @@ const windowOptions = {
   // resizable stays true because resizable:false breaks -webkit-app-region
   // drag on Linux.
   resizable: true,
+  // Double-clicking a drag region maximizes a frameless window, and the
+  // layouts only exist at their fixed sizes. Linux ignores this flag, so
+  // createWindows also snaps back on the maximize event.
+  maximizable: false,
   alwaysOnTop: true,
   skipTaskbar: true,
   hasShadow: false,
@@ -428,10 +432,23 @@ function createWindows() {
   });
   stayOnTop(overlayWindow);
   overlayWindow.loadFile(path.join(rendererDir, 'app.html'), { query: { view: 'overlay' } });
-  overlayWindow.webContents.on('did-finish-load', sendState);
+  // The overlay needs its own env send: the bubble's did-finish-load can fire
+  // before this window listens, and without it the body misses the .managed
+  // class — the whole panel becomes a drag region, where a double click
+  // maximizes the window.
+  overlayWindow.webContents.on('did-finish-load', () => {
+    sendToRenderer('ui:env', { managed: canPositionWindows });
+    sendState();
+  });
   // Focus bounces back to the bubble window right after a click, so a bare
   // blur is not enough: the panel only closes when no window of ours is
   // focused any more — that is, when the click really landed outside.
+  // Linux ignores maximizable: false, so a double click on a drag region (the
+  // whole body on Wayland, by design) can still maximize — undo it on the spot.
+  for (const win of [mainWindow, overlayWindow]) {
+    win.on('maximize', () => win.unmaximize());
+  }
+
   overlayWindow.on('blur', () => {
     if (overlayMode !== 'panel' || Date.now() - openedAt < SETTLE_MS) return;
     setTimeout(() => {
