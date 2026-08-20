@@ -657,6 +657,21 @@ for (const input of shortcutInputs) {
     input.blur();
   });
 }
+
+// Autostart mirrors the OS state (main reads the real entry), so the checkbox
+// only reflects what came in the last state — no local persistence.
+const autostartCheckbox = document.getElementById('autostart');
+const autostartState = document.getElementById('autostart-state');
+
+function applyAutostart(on) {
+  autostartCheckbox.checked = Boolean(on);
+  autostartState.textContent = on ? '[on]' : '[off]';
+}
+
+autostartCheckbox.addEventListener('change', () => {
+  applyAutostart(autostartCheckbox.checked);
+  window.manager.setConfig({ autostart: autostartCheckbox.checked });
+});
 for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
@@ -1157,6 +1172,7 @@ window.manager.onState((state) => {
   applyTheme(state.theme);
   applyCrt(state.crt);
   applyShortcuts(state.shortcuts);
+  applyAutostart(state.autostart);
   applySound(state.sound);
   renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);

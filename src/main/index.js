@@ -30,6 +30,7 @@ import { THEMES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
 import { anchorVisible, centerAnchor } from './bubble-position.js';
 import { sanitizeShortcuts } from './shortcuts.js';
+import { applyLinuxAutostart, autostartFilePath, desktopEntry, execLine } from './autostart.js';
 import { setupUpdater } from './updater.js';
 import { detectTrayHost, trayMenuTemplate } from './tray.js';
 import { installTraySupport, shouldInstallTraySupport } from './tray-support.js';
@@ -158,6 +159,30 @@ function sendToRenderer(channel, payload) {
   }
 }
 
+// The OS owns the autostart truth (a file on Linux, login items elsewhere), so
+// nothing is persisted in config.json — the checkbox reflects what really is.
+function autostartEnabled() {
+  if (process.platform === 'linux') return fs.existsSync(autostartFilePath());
+  return app.getLoginItemSettings().openAtLogin;
+}
+
+function setAutostart(enabled) {
+  if (process.platform !== 'linux') {
+    app.setLoginItemSettings({ openAtLogin: enabled });
+    return;
+  }
+  const entry = desktopEntry({
+    execLine: execLine({
+      isPackaged: app.isPackaged,
+      execPath: process.execPath,
+      appImage: process.env.APPIMAGE,
+      appDir: path.join(currentDir, '..', '..'),
+    }),
+    iconPath,
+  });
+  applyLinuxAutostart(enabled, { entry });
+}
+
 let updateStatus = { mode: 'off', available: null, ready: null, installing: false };
 let updaterHandle = { apply: () => {} };
 let announcedUpdateVersion = null;
@@ -173,6 +198,7 @@ function sendState() {
     trayNeedsRelogin,
     crt: managerConfig.crt,
     shortcuts: { values: managerConfig.shortcuts, failed: shortcutFailures },
+    autostart: autostartEnabled(),
     sound: {
       muted: managerConfig.muted,
       volume: managerConfig.soundVolume,
@@ -711,6 +737,15 @@ ipcMain.handle('config:set', (_event, partial) => {
   }
   if (partial?.shortcuts && typeof partial.shortcuts === 'object') {
     allowed.shortcuts = sanitizeShortcuts(partial.shortcuts, managerConfig.shortcuts);
+  }
+  // Not config state: the OS holds the truth, so the flag is applied and
+  // re-read instead of saved.
+  if (typeof partial?.autostart === 'boolean') {
+    try {
+      setAutostart(partial.autostart);
+    } catch (error) {
+      log(`autostart toggle failed: ${error}`);
+    }
   }
   managerConfig = { ...managerConfig, ...allowed };
   try {
