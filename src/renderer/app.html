@@ -1105,14 +1105,17 @@
           0 0 4px currentColor;
       }
       /* Curvature only where a misaligned click cannot cost anything: the
-         filter moves pixels, not hit boxes, so scale is capped at 4 — under
-         2px of pull at the corners, less than the padding of the toast
-         buttons. The panel's sliders and selects stay flat. */
-      body.crt #bubble,
+         filter moves pixels, not hit boxes, and the map is neutral at the
+         surface edges, so the pull peaks mid-surface — well under the padding
+         of the toast buttons. The bubble stays out of it: its outline is a
+         circle, which crosses the inside of the box at every angle, so any
+         field that curves the interior drags the ring along and chews it
+         (measured on the 56px bubble: 1.75px inward with an edge-heavy map,
+         1.4px outward at the diagonals with this one). There the scanlines,
+         the vignette and the bloom carry the tube on their own. The panel's
+         sliders and selects stay flat. */
       body.crt #tooltip {
         filter: url(#crt-barrel);
-      }
-      body.crt #tooltip {
         position: relative;
       }
       /* Inset only. Each surface is sized to its own window, so an outer glow
@@ -1132,12 +1135,22 @@
     </style>
   </head>
   <body>
-    <!-- Barrel map: R displaces x, G displaces y. The linear ramps alone would
-         only scale the image, so a radial gradient of neutral grey holds the
-         middle still — the deviation then grows with the distance from the
-         centre, which is what makes it a bulge instead of a zoom. -->
+    <!-- Barrel map: R displaces x, G displaces y, 0x80 meaning "leave this
+         pixel where it is". Both ramps start and end neutral and swing to
+         their extremes a quarter of the way in, so the middle bulges outward
+         while the surface's own border keeps every pixel it had. The region is
+         pinned to the surface box because the default one is 10% larger: the
+         map would be stretched over it and the neutral ends would land outside
+         the surface, back to pulling the border. -->
     <svg width="0" height="0" aria-hidden="true" style="position: absolute">
-      <filter id="crt-barrel" color-interpolation-filters="sRGB">
+      <filter
+        id="crt-barrel"
+        color-interpolation-filters="sRGB"
+        x="0%"
+        y="0%"
+        width="100%"
+        height="100%"
+      >
         <feImage
           preserveAspectRatio="none"
           x="0%"
@@ -1145,7 +1158,7 @@
           width="100%"
           height="100%"
           result="map"
-          href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='x' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%23000'/%3E%3Cstop offset='1' stop-color='%23f00'/%3E%3C/linearGradient%3E%3ClinearGradient id='y' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23000'/%3E%3Cstop offset='1' stop-color='%230f0'/%3E%3C/linearGradient%3E%3CradialGradient id='m'%3E%3Cstop offset='0' stop-color='%23808080' stop-opacity='1'/%3E%3Cstop offset='1' stop-color='%23808080' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23x)'/%3E%3Crect width='100' height='100' fill='url(%23y)' style='mix-blend-mode:screen'/%3E%3Crect width='100' height='100' fill='url(%23m)'/%3E%3C/svg%3E"
+          href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='x' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%23800000'/%3E%3Cstop offset='0.25' stop-color='%23ff0000'/%3E%3Cstop offset='0.5' stop-color='%23800000'/%3E%3Cstop offset='0.75' stop-color='%23000000'/%3E%3Cstop offset='1' stop-color='%23800000'/%3E%3C/linearGradient%3E%3ClinearGradient id='y' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23008000'/%3E%3Cstop offset='0.25' stop-color='%2300ff00'/%3E%3Cstop offset='0.5' stop-color='%23008000'/%3E%3Cstop offset='0.75' stop-color='%23000000'/%3E%3Cstop offset='1' stop-color='%23008000'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100' height='100' fill='url(%23x)'/%3E%3Crect width='100' height='100' fill='url(%23y)' style='mix-blend-mode:screen'/%3E%3C/svg%3E"
         />
         <feDisplacementMap
           in="SourceGraphic"
