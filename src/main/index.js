@@ -5,7 +5,10 @@ import {
   globalShortcut,
   ipcMain,
   Menu,
+  Notification,
   screen,
+  shell,
+  systemPreferences,
   Tray,
 } from 'electron';
 import { execFile } from 'node:child_process';
@@ -60,6 +63,12 @@ import {
   claudeTranscriptPath,
 } from './cc-sessions.js';
 import { readInboundPolicy, setInboundPolicy } from './claude-settings.js';
+import {
+  probeSystemEventsAutomation,
+  ACCESSIBILITY_PANE,
+  AUTOMATION_PANE,
+} from './permissions-darwin.js';
+import { linuxFocusHint } from './focus-hints.js';
 import { sendUserMessage } from './cc-peer.js';
 
 // Two window-management modes:
@@ -835,6 +844,50 @@ function sessionFocusTarget(session) {
   };
 }
 
+// Exact focus rides on things a fresh setup may not have — and they all fail
+// SILENTLY. The first click that misses its tab tells the user what is
+// missing. macOS: Accessibility (synthetic keys) and Automation (AppleEvents)
+// via the native consent ask — the system Accessibility dialog (which also
+// lists the app in the pane), the Automation prompt via a harmless probe, and
+// a notification that opens the right panel. Linux: no dialog to raise, so a
+// notification names the missing piece (xdotool, kitty remote control).
+let focusNudgeDone = false;
+function nudgeLinuxFocusPrereqs(session, result) {
+  const hint = linuxFocusHint(result, session?.term);
+  if (!hint) return; // nothing actionable — stay quiet and keep watching
+  focusNudgeDone = true;
+  log(`linux focus hint: ${hint.key}`);
+  new Notification({ title: hint.title, body: hint.body }).show();
+  speakAsManager(hint.speech);
+}
+
+async function nudgeMacosPermissions() {
+  focusNudgeDone = true;
+  try {
+    const accessible = systemPreferences.isTrustedAccessibilityClient(false);
+    const automation = await probeSystemEventsAutomation();
+    log(`macos permissions: accessibility=${accessible} automation=${automation}`);
+    if (accessible && automation === 'granted') return;
+    if (!accessible) systemPreferences.isTrustedAccessibilityClient(true);
+    const note = new Notification({
+      title: 'O gerente precisa de uma permissão',
+      body:
+        'Pra te levar direto pra aba do chat, ative o Claude Manager em ' +
+        'Acessibilidade (e em Automação) na Privacidade e Segurança.',
+    });
+    note.on('click', () => {
+      shell.openExternal(accessible ? AUTOMATION_PANE : ACCESSIBILITY_PANE);
+    });
+    note.show();
+    speakAsManager(
+      'Preciso de uma permissãozinha sua nos ajustes! Libera o acesso pra mim ' +
+        'que aí eu te levo direto pra aba do chat.',
+    );
+  } catch (error) {
+    log(`macos permissions nudge failed: ${error}`);
+  }
+}
+
 async function huntSessionTab(session) {
   const result = await terminal.focusChatTab(sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
@@ -842,6 +895,10 @@ async function huntSessionTab(session) {
     ...sessionFocusTarget(session),
   });
   log(`focus ${session?.id?.slice(0, 8)}: ${JSON.stringify(result)}`);
+  if (!result.tabFound && !focusNudgeDone) {
+    if (process.platform === 'darwin') nudgeMacosPermissions();
+    else if (process.platform === 'linux') nudgeLinuxFocusPrereqs(session, result);
+  }
   if (session?.id) {
     if (result.tabFound && result.matchedTitle) {
       matchedTitleCache.set(session.id, result.matchedTitle);
