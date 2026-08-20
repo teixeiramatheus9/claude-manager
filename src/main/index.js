@@ -31,7 +31,7 @@ import { terminal, tts } from './platform.js';
 import { VOICES } from './sherpa-installer.js';
 import { THEMES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
-import { anchorVisible, centerAnchor } from './bubble-position.js';
+import { anchorVisible, centerAnchor, spotlightBounds } from './bubble-position.js';
 import { sanitizeShortcuts } from './shortcuts.js';
 import { applyLinuxAutostart, autostartFilePath, desktopEntry, execLine } from './autostart.js';
 import { setupUpdater } from './updater.js';
@@ -165,6 +165,7 @@ const tokenBudget = new TokenBudget({ file: usageFile });
 const isEconomyMode = () => tokenBudget.isExceeded(managerConfig.tokenBudgetDaily);
 let mainWindow = null;
 let overlayWindow = null;
+let spotlightWindow = null;
 let tray = null;
 let socketServer = null;
 let trayNeedsRelogin = false;
@@ -408,6 +409,38 @@ function showBubble() {
 // spot on a display that went away, window buried under others, or plain
 // "where is it?". The pulse tells the eye where to look. On Wayland the app
 // cannot position windows, so there it only shows and pulses in place.
+const SPOT_BOX = 160;
+const SPOT_MS = 2400;
+let spotlightTimer = null;
+
+// The halo rides in its own click-through window: the bubble window is
+// exactly bubble-sized and clips any glow into a square. The ring colour is
+// read live from the bubble's CSS so every theme keeps its own accent.
+async function flashSpotlight() {
+  if (!spotlightWindow || spotlightWindow.isDestroyed() || !bubbleAnchor) return;
+  try {
+    const accent = await mainWindow.webContents.executeJavaScript(
+      "getComputedStyle(document.body).getPropertyValue('--accent')",
+    );
+    await spotlightWindow.webContents.executeJavaScript(
+      `document.body.style.setProperty('--ring', ${JSON.stringify(String(accent).trim())})`,
+    );
+    // positioned while hidden — resizing/moving a visible transparent window
+    // ghosts on macOS
+    spotlightWindow.hide();
+    spotlightWindow.setBounds(spotlightBounds(bubbleAnchor, BUBBLE_BOX, SPOT_BOX));
+    spotlightWindow.showInactive();
+    stayOnTop(spotlightWindow);
+    stayOnTop(mainWindow); // the bubble itself stays above its halo
+    clearTimeout(spotlightTimer);
+    spotlightTimer = setTimeout(() => {
+      if (spotlightWindow && !spotlightWindow.isDestroyed()) spotlightWindow.hide();
+    }, SPOT_MS);
+  } catch (error) {
+    log(`spotlight failed: ${error}`);
+  }
+}
+
 function findBubble() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   showBubble();
@@ -417,6 +450,7 @@ function findBubble() {
     mainWindow.setPosition(bubbleAnchor.x, bubbleAnchor.y);
     persistAnchor();
     if (overlayMode) showOverlay(overlayMode, { focus: overlayMode === 'panel' });
+    flashSpotlight();
   }
   stayOnTop(mainWindow);
   sendToRenderer('ui:spotted');
@@ -584,6 +618,17 @@ function createWindows() {
     sendToRenderer('ui:env', { managed: canPositionWindows });
     sendState();
   });
+
+  spotlightWindow = new BrowserWindow({
+    ...windowOptions,
+    width: SPOT_BOX,
+    height: SPOT_BOX,
+    show: false,
+    focusable: false,
+  });
+  // pure halo: never focus, never swallow a click on whatever sits behind it
+  spotlightWindow.setIgnoreMouseEvents(true);
+  spotlightWindow.loadFile(path.join(rendererDir, 'spotlight.html'));
 
   overlayWindow = new BrowserWindow({
     ...windowOptions,
