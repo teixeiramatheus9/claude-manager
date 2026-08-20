@@ -22,3 +22,11 @@ export function centerAnchor(workArea, box) {
     y: workArea.y + Math.round((workArea.height - box) / 2),
   };
 }
+
+// The find-the-bubble halo lives in its own bigger window (the bubble window
+// is exactly bubble-sized and would clip any glow square); this centers that
+// window on the bubble.
+export function spotlightBounds(anchor, bubbleBox, spotBox) {
+  const offset = Math.round((spotBox - bubbleBox) / 2);
+  return { x: anchor.x - offset, y: anchor.y - offset, width: spotBox, height: spotBox };
+}

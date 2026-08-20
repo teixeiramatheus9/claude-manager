@@ -39,3 +39,15 @@ describe('centerAnchor', () => {
     expect(centerAnchor(second.workArea, BOX)).toEqual({ x: 2532, y: 464 });
   });
 });
+
+describe('spotlightBounds', () => {
+  it('centers the halo window on the bubble', async () => {
+    const { spotlightBounds } = await import('../src/main/bubble-position.js');
+    expect(spotlightBounds({ x: 100, y: 200 }, 56, 160)).toEqual({
+      x: 48,
+      y: 148,
+      width: 160,
+      height: 160,
+    });
+  });
+});
