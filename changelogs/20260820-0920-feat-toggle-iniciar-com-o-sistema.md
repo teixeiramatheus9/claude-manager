@@ -1,0 +1,2 @@
+- Toggle "iniciar com o sistema" nas configurações: liga e desliga a subida automática do app no login sem linha de comando — no Linux escreve/remove o atalho em ~/.config/autostart (apontando pro AppImage, pro binário instalado ou pro modo dev, o que estiver rodando); no macOS e Windows usa os itens de login nativos do sistema
+- O estado do toggle reflete o que o sistema realmente tem configurado, não uma preferência salva à parte
