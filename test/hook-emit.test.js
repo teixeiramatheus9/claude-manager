@@ -24,8 +24,23 @@ const hookScript = path.join(
 function runHook(input, env = {}) {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [hookScript], {
-      // blank the wave vars so results don't depend on the terminal running the suite
-      env: { ...process.env, WAVETERM_BLOCKID: '', WAVETERM_TABID: '', WAVETERM_JWT: '', ...env },
+      // blank the wave/term vars so results don't depend on the terminal running the suite
+      env: {
+        ...process.env,
+        WAVETERM_BLOCKID: '',
+        WAVETERM_TABID: '',
+        WAVETERM_JWT: '',
+        ITERM_SESSION_ID: '',
+        TERM_SESSION_ID: '',
+        KITTY_WINDOW_ID: '',
+        KITTY_LISTEN_ON: '',
+        WEZTERM_PANE: '',
+        WEZTERM_UNIX_SOCKET: '',
+        TMUX: '',
+        TMUX_PANE: '',
+        WT_SESSION: '',
+        ...env,
+      },
       stdio: ['pipe', 'ignore', 'ignore'],
     });
     child.on('close', (code) => resolve(code));
@@ -85,6 +100,41 @@ describe('hook-emit', () => {
     expect(JSON.parse(await received)).toEqual({
       ...event,
       wave: { blockId: 'b1', tabId: 't1', jwt: 'j1' },
+    });
+  });
+
+  it('attaches the terminal identity vars present in the environment', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-hook-'));
+    const socketFile = testSocketPath(dir, 'test.sock');
+    const received = new Promise((resolve) => {
+      const server = net.createServer((socket) => {
+        let data = '';
+        socket.on('data', (chunk) => {
+          data += chunk;
+        });
+        socket.on('end', () => {
+          server.close();
+          resolve(data);
+        });
+      });
+      server.listen(socketFile);
+    });
+
+    const event = { hook_event_name: 'Stop', session_id: 'abc', cwd: '/tmp/proj' };
+    const exitCode = await runHook(JSON.stringify(event), {
+      CLAUDE_MANAGER_SOCKET: socketFile,
+      ITERM_SESSION_ID: 'w0t2p0:UUID',
+      KITTY_WINDOW_ID: '3',
+      KITTY_LISTEN_ON: 'unix:/tmp/kitty-sock',
+    });
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(await received)).toEqual({
+      ...event,
+      term: {
+        ITERM_SESSION_ID: 'w0t2p0:UUID',
+        KITTY_WINDOW_ID: '3',
+        KITTY_LISTEN_ON: 'unix:/tmp/kitty-sock',
+      },
     });
   });
 
