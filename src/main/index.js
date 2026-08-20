@@ -65,6 +65,10 @@ import {
 import { readInboundPolicy, setInboundPolicy } from './claude-settings.js';
 import {
   probeSystemEventsAutomation,
+  accessibilityLostAfterUpdate,
+  resetAccessibilityEntries,
+  readGrantMemory,
+  writeGrantMemory,
   ACCESSIBILITY_PANE,
   AUTOMATION_PANE,
 } from './permissions-darwin.js';
@@ -861,14 +865,59 @@ function nudgeLinuxFocusPrereqs(session, result) {
   speakAsManager(hint.speech);
 }
 
+// Ad-hoc signing (issue #58) means every self-update hands macOS a new code
+// signature, silently voiding the Accessibility grant while the Settings pane
+// keeps a toggled-on entry bound to the DEAD one. On boot: if the grant the
+// user gave is gone, wipe this app's stale TCC rows so the fresh ask registers
+// one clean entry, then ask again saying exactly what happened.
+const grantMemoryFile = path.join(configDir, 'macos-perms.json');
+
+async function renewMacosGrantAfterUpdate() {
+  if (process.platform !== 'darwin' || !app.isPackaged) return;
+  try {
+    const memory = readGrantMemory(grantMemoryFile);
+    const nowGranted = systemPreferences.isTrustedAccessibilityClient(false);
+    if (accessibilityLostAfterUpdate(memory, nowGranted)) {
+      log('macos accessibility lost after update — resetting stale TCC entries');
+      await resetAccessibilityEntries('io.github.teixeiramatheus9.claude-manager');
+      systemPreferences.isTrustedAccessibilityClient(true);
+      const note = new Notification({
+        title: 'A atualização renovou minha identidade',
+        body:
+          'O macOS zerou a permissão de Acessibilidade na atualização. ' +
+          'Reative o Claude Manager lá que volto a te levar pra aba certa.',
+      });
+      note.on('click', () => shell.openExternal(ACCESSIBILITY_PANE));
+      note.show();
+      speakAsManager(
+        'A atualização renovou minha identidade no sistema! Me autoriza de novo ' +
+          'lá em acessibilidade que eu volto a te levar direto pra aba do chat.',
+      );
+    }
+    writeGrantMemory(grantMemoryFile, { accessible: nowGranted });
+  } catch (error) {
+    log(`macos grant renewal failed: ${error}`);
+  }
+}
+
 async function nudgeMacosPermissions() {
   focusNudgeDone = true;
   try {
     const accessible = systemPreferences.isTrustedAccessibilityClient(false);
     const automation = await probeSystemEventsAutomation();
     log(`macos permissions: accessibility=${accessible} automation=${automation}`);
+    // Keep the on-disk memory fresh: a grant given mid-run must be remembered,
+    // or its loss on the NEXT update would go undetected.
+    if (app.isPackaged) writeGrantMemory(grantMemoryFile, { accessible });
     if (accessible && automation === 'granted') return;
-    if (!accessible) systemPreferences.isTrustedAccessibilityClient(true);
+    if (!accessible) {
+      // Start from clean rows: piled-up dead entries leave the pane showing a
+      // toggled-on ghost next to the real ask (harmless when there are none).
+      if (app.isPackaged) {
+        await resetAccessibilityEntries('io.github.teixeiramatheus9.claude-manager');
+      }
+      systemPreferences.isTrustedAccessibilityClient(true);
+    }
     const note = new Notification({
       title: 'O gerente precisa de uma permissão',
       body:
@@ -1176,6 +1225,7 @@ app.whenReady().then(() => {
     10_000,
   );
   announceUpdateIfJustInstalled();
+  renewMacosGrantAfterUpdate();
   ensureHooksInstalled();
   hydrateRegistry();
   reapDeadSessions();
