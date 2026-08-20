@@ -68,6 +68,7 @@ import {
   ACCESSIBILITY_PANE,
   AUTOMATION_PANE,
 } from './permissions-darwin.js';
+import { linuxFocusHint } from './focus-hints.js';
 import { sendUserMessage } from './cc-peer.js';
 
 // Two window-management modes:
@@ -843,15 +844,24 @@ function sessionFocusTarget(session) {
   };
 }
 
-// Exact focus on macOS rides on Accessibility (synthetic keys) and Automation
-// (AppleEvents) — and a fresh install has neither, failing SILENTLY. The first
-// click that misses its tab triggers the native consent ask: the system
-// Accessibility dialog (which also lists the app in the pane), the Automation
-// prompt via a harmless probe, and a notification that opens the right panel.
-let macosPermissionsNudged = false;
+// Exact focus rides on things a fresh setup may not have — and they all fail
+// SILENTLY. The first click that misses its tab tells the user what is
+// missing. macOS: Accessibility (synthetic keys) and Automation (AppleEvents)
+// via the native consent ask — the system Accessibility dialog (which also
+// lists the app in the pane), the Automation prompt via a harmless probe, and
+// a notification that opens the right panel. Linux: no dialog to raise, so a
+// notification names the missing piece (xdotool, kitty remote control).
+let focusNudgeDone = false;
+function nudgeLinuxFocusPrereqs(session, result) {
+  const hint = linuxFocusHint(result, session?.term);
+  if (!hint) return; // nothing actionable — stay quiet and keep watching
+  focusNudgeDone = true;
+  log(`linux focus hint: ${hint.key}`);
+  new Notification({ title: hint.title, body: hint.body }).show();
+}
+
 async function nudgeMacosPermissions() {
-  if (process.platform !== 'darwin' || macosPermissionsNudged) return;
-  macosPermissionsNudged = true;
+  focusNudgeDone = true;
   try {
     const accessible = systemPreferences.isTrustedAccessibilityClient(false);
     const automation = await probeSystemEventsAutomation();
@@ -880,7 +890,10 @@ async function huntSessionTab(session) {
     ...sessionFocusTarget(session),
   });
   log(`focus ${session?.id?.slice(0, 8)}: ${JSON.stringify(result)}`);
-  if (!result.tabFound) nudgeMacosPermissions();
+  if (!result.tabFound && !focusNudgeDone) {
+    if (process.platform === 'darwin') nudgeMacosPermissions();
+    else if (process.platform === 'linux') nudgeLinuxFocusPrereqs(session, result);
+  }
   if (session?.id) {
     if (result.tabFound && result.matchedTitle) {
       matchedTitleCache.set(session.id, result.matchedTitle);
