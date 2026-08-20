@@ -1,0 +1,1 @@
+- A voz neural agora começa a baixar assim que o app sobe (com TTS ligado) e na hora em que o TTS é ativado nas configurações — antes o download só começava na primeira fala, e a estreia era sempre com a voz de emergência do sistema

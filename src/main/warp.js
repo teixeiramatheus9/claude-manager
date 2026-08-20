@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { selectExactTab, VIA_APP_HINTS } from './terminal-target.js';
 
 const execFileAsync = promisify(execFile);
 const REPLY_TYPE_DELAY_MS = 350;
@@ -159,6 +160,7 @@ export async function focusChatTab(
     maxTabs = 12,
     terminal = 'auto',
     allowInputInjection = true,
+    term,
   } = {},
 ) {
   try {
@@ -172,7 +174,23 @@ export async function focusChatTab(
         // not running or not installed — the normal hunt still applies
       }
     }
+    // Exact route first: the terminal's own CLI selects the session's tab from
+    // the identity the hook captured; xdotool then only has to raise its
+    // window. The capture outranks the configured terminal — it proves where
+    // the session actually lives. tmux selects too, but its host window is
+    // unknown, so the title hunt below still decides which window to raise.
+    const exact = await selectExactTab(term, { execFn });
+    const exactClassHint = exact.selected ? VIA_APP_HINTS[exact.via]?.classHint : null;
     const allWindows = await listWindows({ execFn });
+    if (exactClassHint) {
+      const exactWindow = allWindows.find((window) =>
+        window.wmClass.toLowerCase().includes(exactClassHint),
+      );
+      if (exactWindow) {
+        await execFn('xdotool', ['windowactivate', exactWindow.id]);
+        return { focused: true, tabFound: true, matchedTitle: exactWindow.title, cause: null };
+      }
+    }
     if (!allWindows.length) {
       return { focused: false, tabFound: false, matchedTitle: null, cause: 'no-x-windows' };
     }
@@ -246,6 +264,7 @@ export async function answerQuestionInWarp(
     delayMs = REPLY_TYPE_DELAY_MS,
     terminal = 'auto',
     allowInputInjection = true,
+    term,
   } = {},
 ) {
   const { focused, tabFound } = await focusChatTab(searchKeys, {
@@ -253,6 +272,7 @@ export async function answerQuestionInWarp(
     delayMs,
     terminal,
     allowInputInjection,
+    term,
   });
   // The terminal is focused either way, so the user can answer by hand.
   if (!allowInputInjection) return 'needs-terminal';
@@ -287,6 +307,7 @@ export async function sendReplyToWarp(
     delayMs = REPLY_TYPE_DELAY_MS,
     terminal = 'auto',
     allowInputInjection = true,
+    term,
   } = {},
 ) {
   const clipboardFallback = () => {
@@ -303,6 +324,7 @@ export async function sendReplyToWarp(
     delayMs,
     terminal,
     allowInputInjection,
+    term,
   });
   if (!focused) return clipboardFallback();
   // Typing is XTEST: refused on Wayland, so the reply goes to the clipboard

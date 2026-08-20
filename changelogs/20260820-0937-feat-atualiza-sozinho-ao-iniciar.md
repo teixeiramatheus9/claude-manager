@@ -1,0 +1,2 @@
+- O app agora se atualiza sozinho quando sai versão nova: ao iniciar (e nas checagens periódicas), baixa e aplica sem precisar clicar no banner — AppImage/Windows reiniciam sozinhos, deb/rpm pedem a senha uma única vez por versão (cancelou, não insiste)
+- Toggle "atualizar sozinho quando sair versão nova" nas configurações pra quem prefere o fluxo antigo do banner

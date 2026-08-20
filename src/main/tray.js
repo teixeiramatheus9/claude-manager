@@ -20,6 +20,7 @@ export function trayMenuTemplate({ bubbleVisible }) {
     { id: 'settings', label: 'Configurações' },
     { type: 'separator' },
     { id: 'toggle', label: bubbleVisible ? 'Esconder a bolha' : 'Mostrar a bolha' },
+    { id: 'find', label: 'Encontrar a bolha' },
     { type: 'separator' },
     { id: 'quit', label: 'Encerrar' },
   ];

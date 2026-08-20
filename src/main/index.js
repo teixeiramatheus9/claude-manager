@@ -1,4 +1,13 @@
-import { app, BrowserWindow, clipboard, ipcMain, Menu, screen, Tray } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  screen,
+  Tray,
+} from 'electron';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
@@ -19,6 +28,9 @@ import { terminal, tts } from './platform.js';
 import { VOICES } from './sherpa-installer.js';
 import { THEMES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
+import { anchorVisible, centerAnchor } from './bubble-position.js';
+import { sanitizeShortcuts } from './shortcuts.js';
+import { applyLinuxAutostart, autostartFilePath, desktopEntry, execLine } from './autostart.js';
 import { setupUpdater } from './updater.js';
 import { detectTrayHost, trayMenuTemplate } from './tray.js';
 import { installTraySupport, shouldInstallTraySupport } from './tray-support.js';
@@ -32,11 +44,17 @@ import {
   updateNoticeFile,
   configDir,
 } from './paths.js';
-import { UPDATE_DONE_PHRASE, shouldAnnounce } from './update-notice.js';
+import {
+  UPDATE_DONE_PHRASE,
+  shouldAnnounce,
+  shouldAutoApply,
+  updateAnnouncement,
+} from './update-notice.js';
 import { log } from './log.js';
 import { resolveDisplayMode, shouldRelaunchUnderX11 } from './display-mode.js';
 import {
   readSessionChannel,
+  readSessionPid,
   readLiveSessionIds,
   readAdoptableSessions,
   claudeTranscriptPath,
@@ -147,6 +165,30 @@ function sendToRenderer(channel, payload) {
   }
 }
 
+// The OS owns the autostart truth (a file on Linux, login items elsewhere), so
+// nothing is persisted in config.json — the checkbox reflects what really is.
+function autostartEnabled() {
+  if (process.platform === 'linux') return fs.existsSync(autostartFilePath());
+  return app.getLoginItemSettings().openAtLogin;
+}
+
+function setAutostart(enabled) {
+  if (process.platform !== 'linux') {
+    app.setLoginItemSettings({ openAtLogin: enabled });
+    return;
+  }
+  const entry = desktopEntry({
+    execLine: execLine({
+      isPackaged: app.isPackaged,
+      execPath: process.execPath,
+      appImage: process.env.APPIMAGE,
+      appDir: path.join(currentDir, '..', '..'),
+    }),
+    iconPath,
+  });
+  applyLinuxAutostart(enabled, { entry });
+}
+
 let updateStatus = { mode: 'off', available: null, ready: null, installing: false };
 let updaterHandle = { apply: () => {} };
 let announcedUpdateVersion = null;
@@ -161,6 +203,9 @@ function sendState() {
     trayAvailable: Boolean(tray),
     trayNeedsRelogin,
     crt: managerConfig.crt,
+    shortcuts: { values: managerConfig.shortcuts, failed: shortcutFailures },
+    autostart: autostartEnabled(),
+    autoUpdate: managerConfig.autoUpdate,
     sound: {
       muted: managerConfig.muted,
       volume: managerConfig.soundVolume,
@@ -177,24 +222,66 @@ function sendState() {
   });
 }
 
+function speakAsManager(text) {
+  if (!managerConfig.ttsEnabled) return;
+  const volume = Math.round((managerConfig.voiceVolume * managerConfig.soundVolume) / 100);
+  tts.speak(text, { voice: managerConfig.voice, volume });
+}
+
+// The install relaunches the app; the note left behind is what lets the new
+// version announce itself (see announceUpdateIfJustInstalled).
+function applyUpdate() {
+  const version = updateStatus.ready ?? updateStatus.available;
+  try {
+    if (version) fs.writeFileSync(updateNoticeFile, JSON.stringify({ version }));
+  } catch (error) {
+    log(`update notice failed: ${error}`);
+  }
+  updaterHandle.apply();
+}
+
+// One auto-apply per version: a cancelled password prompt flips failed, and
+// the same version must not come asking again on the next status change.
+let autoApplyAttempted = null;
+
 function onUpdateStatus(status) {
-  const wasInstalling = updateStatus.installing;
+  const previous = updateStatus;
   updateStatus = status;
   sendState();
-  if (status.installing !== wasInstalling) {
+  if (status.installing !== previous.installing) {
     setFloatAboveEverything(!status.installing);
     if (status.installing) hideOverlay();
   }
+  const phrase = updateAnnouncement(previous, status, managerConfig.autoUpdate);
+  if (phrase) speakAsManager(phrase);
   const version = status.ready ?? status.available;
-  if (!version || announcedUpdateVersion === version) return;
-  announcedUpdateVersion = version;
-  sendToRenderer('tooltip', {
-    projectName: 'Claude Manager',
-    text: status.ready
-      ? `Atualização v${version} pronta! Clica no banner do painel pra reiniciar.`
-      : `Versão v${version} disponível!`,
-    kind: 'done',
-  });
+  if (version && announcedUpdateVersion !== version) {
+    announcedUpdateVersion = version;
+    sendToRenderer('tooltip', {
+      projectName: 'Claude Manager',
+      text: managerConfig.autoUpdate
+        ? `Versão v${version} — vou me atualizar sozinho.`
+        : status.ready
+          ? `Atualização v${version} pronta! Clica no banner do painel pra reiniciar.`
+          : `Versão v${version} disponível!`,
+      kind: 'done',
+    });
+  }
+  if (
+    shouldAutoApply({
+      autoUpdate: managerConfig.autoUpdate,
+      mode: status.mode,
+      available: status.available,
+      ready: status.ready,
+      installing: status.installing,
+      failed: status.failed,
+      attemptedVersion: autoApplyAttempted,
+    })
+  ) {
+    autoApplyAttempted = status.mode === 'auto' ? status.ready : status.available;
+    log(`updater: self-applying ${autoApplyAttempted}`);
+    applyUpdate();
+  }
 }
 
 function loadPersistedState() {
@@ -304,6 +391,63 @@ function showBubble() {
   refreshTrayMenu();
 }
 
+// Brings a lost bubble to the middle of the display under the cursor — saved
+// spot on a display that went away, window buried under others, or plain
+// "where is it?". The pulse tells the eye where to look. On Wayland the app
+// cannot position windows, so there it only shows and pulses in place.
+function findBubble() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  showBubble();
+  if (canPositionWindows) {
+    const cursor = screen.getCursorScreenPoint();
+    bubbleAnchor = centerAnchor(screen.getDisplayNearestPoint(cursor).workArea, BUBBLE_BOX);
+    mainWindow.setPosition(bubbleAnchor.x, bubbleAnchor.y);
+    persistAnchor();
+    if (overlayMode) showOverlay(overlayMode, { focus: overlayMode === 'panel' });
+  }
+  stayOnTop(mainWindow);
+  sendToRenderer('ui:spotted');
+}
+
+// Registers the configured global shortcuts, dropping whatever was bound
+// before. Failures (combo taken by the system, or a Wayland compositor that
+// refuses global shortcuts) are reported through state so the settings panel
+// can say which ones did not take — the tray menu stays the fallback.
+let shortcutFailures = [];
+
+function applyShortcuts() {
+  globalShortcut.unregisterAll();
+  const actions = {
+    panel: () => {
+      if (overlayMode === 'panel') {
+        hideOverlay();
+        return;
+      }
+      showBubble();
+      openPanel();
+    },
+    bubble: () => (bubbleVisible() ? hideToTray() : showBubble()),
+    find: findBubble,
+    chat: () => {
+      showBubble();
+      openPanel();
+      sendToRenderer('ui:open-chat');
+    },
+  };
+  shortcutFailures = [];
+  for (const [id, accelerator] of Object.entries(managerConfig.shortcuts ?? {})) {
+    if (!accelerator || !actions[id]) continue;
+    let registered = false;
+    try {
+      registered = globalShortcut.register(accelerator, actions[id]);
+    } catch {
+      registered = false;
+    }
+    if (!registered) shortcutFailures.push(id);
+  }
+  if (shortcutFailures.length) log(`shortcuts not registered: ${shortcutFailures.join(', ')}`);
+}
+
 function refreshTrayMenu() {
   if (!tray) return;
   const actions = {
@@ -317,6 +461,7 @@ function refreshTrayMenu() {
       sendToRenderer('ui:open-settings');
     },
     toggle: () => (bubbleVisible() ? hideToTray() : showBubble()),
+    find: findBubble,
     quit: () => app.quit(),
   };
   const template = trayMenuTemplate({ bubbleVisible: bubbleVisible() }).map((item) =>
@@ -372,6 +517,10 @@ const windowOptions = {
   // resizable stays true because resizable:false breaks -webkit-app-region
   // drag on Linux.
   resizable: true,
+  // Double-clicking a drag region maximizes a frameless window, and the
+  // layouts only exist at their fixed sizes. Linux ignores this flag, so
+  // createWindows also snaps back on the maximize event.
+  maximizable: false,
   alwaysOnTop: true,
   skipTaskbar: true,
   hasShadow: false,
@@ -398,7 +547,10 @@ function setFloatAboveEverything(enabled) {
 }
 
 function createWindows() {
-  const saved = loadPersistedState().bubble;
+  // A saved anchor from a display that no longer exists (unplugged monitor)
+  // would boot the bubble off screen with nothing to grab — fall back instead.
+  const persisted = loadPersistedState().bubble;
+  const saved = anchorVisible(persisted, screen.getAllDisplays(), BUBBLE_BOX) ? persisted : null;
   const workArea = screen.getPrimaryDisplay().workArea;
   bubbleAnchor = {
     x: saved?.x ?? workArea.x + workArea.width - BUBBLE_BOX - 24,
@@ -428,10 +580,23 @@ function createWindows() {
   });
   stayOnTop(overlayWindow);
   overlayWindow.loadFile(path.join(rendererDir, 'app.html'), { query: { view: 'overlay' } });
-  overlayWindow.webContents.on('did-finish-load', sendState);
+  // The overlay needs its own env send: the bubble's did-finish-load can fire
+  // before this window listens, and without it the body misses the .managed
+  // class — the whole panel becomes a drag region, where a double click
+  // maximizes the window.
+  overlayWindow.webContents.on('did-finish-load', () => {
+    sendToRenderer('ui:env', { managed: canPositionWindows });
+    sendState();
+  });
   // Focus bounces back to the bubble window right after a click, so a bare
   // blur is not enough: the panel only closes when no window of ours is
   // focused any more — that is, when the click really landed outside.
+  // Linux ignores maximizable: false, so a double click on a drag region (the
+  // whole body on Wayland, by design) can still maximize — undo it on the spot.
+  for (const win of [mainWindow, overlayWindow]) {
+    win.on('maximize', () => win.unmaximize());
+  }
+
   overlayWindow.on('blur', () => {
     if (overlayMode !== 'panel' || Date.now() - openedAt < SETTLE_MS) return;
     setTimeout(() => {
@@ -533,15 +698,7 @@ ipcMain.handle('sessions:rescan', () => {
   );
 });
 
-ipcMain.on('update:apply', () => {
-  const version = updateStatus.ready ?? updateStatus.available;
-  try {
-    if (version) fs.writeFileSync(updateNoticeFile, JSON.stringify({ version }));
-  } catch (error) {
-    log(`update notice failed: ${error}`);
-  }
-  updaterHandle.apply();
-});
+ipcMain.on('update:apply', applyUpdate);
 
 ipcMain.handle('update:check', async () => {
   const status = await (updaterHandle.check?.() ?? updateStatus);
@@ -607,6 +764,7 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (typeof partial?.theme === 'string' && THEMES[partial.theme]) allowed.theme = partial.theme;
   if (Number.isFinite(partial?.panelScale)) allowed.panelScale = clampScale(partial.panelScale);
   if (typeof partial?.crt === 'boolean') allowed.crt = partial.crt;
+  if (typeof partial?.autoUpdate === 'boolean') allowed.autoUpdate = partial.autoUpdate;
   if (typeof partial?.muted === 'boolean') allowed.muted = partial.muted;
   if (typeof partial?.ttsEnabled === 'boolean') allowed.ttsEnabled = partial.ttsEnabled;
   if (typeof partial?.timbre === 'string') allowed.timbre = partial.timbre;
@@ -619,6 +777,18 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (Number.isFinite(partial?.tokenBudgetDaily)) {
     allowed.tokenBudgetDaily = Math.max(0, Math.round(partial.tokenBudgetDaily));
   }
+  if (partial?.shortcuts && typeof partial.shortcuts === 'object') {
+    allowed.shortcuts = sanitizeShortcuts(partial.shortcuts, managerConfig.shortcuts);
+  }
+  // Not config state: the OS holds the truth, so the flag is applied and
+  // re-read instead of saved.
+  if (typeof partial?.autostart === 'boolean') {
+    try {
+      setAutostart(partial.autostart);
+    } catch (error) {
+      log(`autostart toggle failed: ${error}`);
+    }
+  }
   managerConfig = { ...managerConfig, ...allowed };
   try {
     saveConfig(configFile, managerConfig);
@@ -629,6 +799,13 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (allowed.panelScale && overlayMode === 'panel') showOverlay('panel', { focus: true });
   // Speaking the sample also pulls the model when it is not there yet.
   if (allowed.voice) tts.speak('Voz trocada. Agora eu falo assim!', { voice: allowed.voice });
+  if (allowed.shortcuts) {
+    applyShortcuts();
+    sendState(); // failures are only known after the re-register
+  }
+  // Turning TTS on is the moment the voice starts being needed — download it
+  // now instead of on the first spoken line.
+  if (allowed.ttsEnabled === true) tts.predownloadVoice(managerConfig.voice);
   return managerConfig;
 });
 
@@ -647,12 +824,24 @@ function sessionSearchKeys(session) {
   ];
 }
 
+// Everything the platform module needs to hit the exact tab: the identity the
+// hook captured from the session's env, and the live claude pid (its tty is
+// how macOS finds the tab in Terminal.app/iTerm2).
+function sessionFocusTarget(session) {
+  return {
+    wave: session?.wave,
+    term: session?.term,
+    sessionPid: session?.id ? readSessionPid(session.id) : null,
+  };
+}
+
 async function huntSessionTab(session) {
   const result = await terminal.focusChatTab(sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
-    wave: session?.wave,
+    ...sessionFocusTarget(session),
   });
+  log(`focus ${session?.id?.slice(0, 8)}: ${JSON.stringify(result)}`);
   if (session?.id) {
     if (result.tabFound && result.matchedTitle) {
       matchedTitleCache.set(session.id, result.matchedTitle);
@@ -702,7 +891,7 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const result = await terminal.answerQuestionInWarp(sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
-    wave: session?.wave,
+    ...sessionFocusTarget(session),
   });
   if (result === 'answered') registry.markAnswered(sessionId);
   return result;
@@ -729,7 +918,7 @@ async function replyToSession(session, text) {
     writeClipboard: (value) => clipboard.writeText(value),
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
-    wave: session?.wave,
+    ...sessionFocusTarget(session),
   });
 }
 
@@ -879,9 +1068,8 @@ function announceUpdateIfJustInstalled() {
   } catch {
     return;
   }
-  if (!shouldAnnounce(mark, app.getVersion()) || !managerConfig.ttsEnabled) return;
-  const volume = Math.round((managerConfig.voiceVolume * managerConfig.soundVolume) / 100);
-  tts.speak(UPDATE_DONE_PHRASE, { voice: managerConfig.voice, volume });
+  if (!shouldAnnounce(mark, app.getVersion())) return;
+  speakAsManager(UPDATE_DONE_PHRASE);
 }
 
 function hydrateRegistry() {
@@ -924,6 +1112,12 @@ app.whenReady().then(() => {
     ),
   );
   tts.watchDownloads(() => sendState());
+  // A fresh session otherwise meets the system fallback voice on the first
+  // spoken line. Delayed so the boot (windows, tray, socket) settles first.
+  setTimeout(
+    () => tts.predownloadVoice(managerConfig.voice, { enabled: managerConfig.ttsEnabled }),
+    10_000,
+  );
   announceUpdateIfJustInstalled();
   ensureHooksInstalled();
   hydrateRegistry();
@@ -936,7 +1130,10 @@ app.whenReady().then(() => {
   setInterval(() => registry.prune(), PRUNE_INTERVAL_MS);
   setInterval(reapDeadSessions, LIVENESS_INTERVAL_MS);
   updaterHandle = setupUpdater({ onStatus: onUpdateStatus, log });
+  applyShortcuts();
 });
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
 
 app.on('window-all-closed', () => {
   // with a tray icon the app lives on with every window hidden

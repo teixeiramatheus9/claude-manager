@@ -58,6 +58,24 @@ process.stdin.on('end', () => {
   if (WAVETERM_BLOCKID && WAVETERM_TABID && WAVETERM_JWT) {
     event.wave = { blockId: WAVETERM_BLOCKID, tabId: WAVETERM_TABID, jwt: WAVETERM_JWT };
   }
+  // Each terminal stamps its tabs/panes with identifying env vars, and this
+  // hook inherits the session's environment — the only place that identity is
+  // visible. Raw values only; interpreting them is the app's job.
+  const term = {};
+  for (const key of [
+    'ITERM_SESSION_ID',
+    'TERM_SESSION_ID',
+    'KITTY_WINDOW_ID',
+    'KITTY_LISTEN_ON',
+    'WEZTERM_PANE',
+    'WEZTERM_UNIX_SOCKET',
+    'TMUX',
+    'TMUX_PANE',
+    'WT_SESSION',
+  ]) {
+    if (process.env[key]) term[key] = process.env[key];
+  }
+  if (Object.keys(term).length) event.term = term;
   const socket = net.connect(socketPath);
   socket.on('connect', () => socket.end(`${JSON.stringify(event)}\n`));
   socket.on('close', () => process.exit(0));

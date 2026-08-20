@@ -1,0 +1,3 @@
+- Atalhos de teclado globais configuráveis nas configurações: abrir/fechar o painel, mostrar/esconder a bolha, encontrar a bolha e abrir o chat do gerente — clica no campo, tecla o atalho e pronto (backspace limpa)
+- Atalho que o sistema recusar (combinação em uso, ou Wayland sem suporte) fica marcado em amarelo com aviso — o menu da bandeja continua valendo
+- O mesmo atalho não pode servir duas ações: ao reaproveitar uma combinação, a ação antiga fica sem atalho

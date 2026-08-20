@@ -1,0 +1,2 @@
+- O gerente agora narra a atualização por voz nos momentos certos: quando começa a baixar a versão nova, quando vai reiniciar pra aplicar, e avisa antes do pedido de senha nos instaladores deb/rpm — antes o pkexec pipocava do nada, sem explicação
+- Falha na atualização também é falada (e a página da release abre), em vez de morrer em silêncio no log

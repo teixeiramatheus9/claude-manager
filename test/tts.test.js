@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import {
   playerCommand,
+  predownloadVoice,
   speak,
   speakNeural,
   stopSpeaking,
@@ -159,5 +160,27 @@ describe('systemVoiceCommand', () => {
       'spd-say',
       ['-l', 'pt-BR', '-i', '100', '--', 'oi'],
     ]);
+  });
+});
+
+describe('predownloadVoice', () => {
+  it('kicks the download of the chosen voice without waiting for a speak', () => {
+    const ensured = [];
+    expect(predownloadVoice('santa', { ensureFn: (id) => ensured.push(id) })).toBe(true);
+    expect(ensured).toEqual(['santa']);
+  });
+
+  it('falls back to the default voice when the id is unknown', () => {
+    const ensured = [];
+    predownloadVoice('typo', { ensureFn: (id) => ensured.push(id) });
+    expect(ensured).toEqual([DEFAULT_VOICE]);
+  });
+
+  it('downloads nothing while TTS is turned off — 350MB need an opt-in', () => {
+    const ensured = [];
+    expect(predownloadVoice('santa', { enabled: false, ensureFn: (id) => ensured.push(id) })).toBe(
+      false,
+    );
+    expect(ensured).toEqual([]);
   });
 });

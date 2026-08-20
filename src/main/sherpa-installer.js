@@ -86,7 +86,9 @@ async function download(url, destination, fetchFn) {
 // `-C C:\...` paths; the OS-bundled bsdtar handles them, so win32 pins it.
 export function tarBinary(platform = process.platform, env = process.env, existsFn = fs.existsSync) {
   if (platform !== 'win32') return 'tar';
-  const systemTar = path.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
+  // win32 separators regardless of the OS running this — the platform comes
+  // in as an argument, so tests exercise this branch from any machine.
+  const systemTar = path.win32.join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe');
   return existsFn(systemTar) ? systemTar : 'tar';
 }
 

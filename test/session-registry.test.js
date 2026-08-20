@@ -36,6 +36,17 @@ describe('SessionRegistry', () => {
     expect(registry.list()[0].lastMessage).toBe(null);
   });
 
+  it('keeps the terminal identity across events and ignores an empty capture', () => {
+    const registry = new SessionRegistry();
+    const term = { KITTY_WINDOW_ID: '3', KITTY_LISTEN_ON: 'unix:/tmp/kitty-sock' };
+    registry.applyEvent(promptEvent({ term }));
+    // a later event without the capture (older hook, sub-shell) must not erase it
+    const session = registry.applyEvent(promptEvent({ hook_event_name: 'Stop' }));
+    expect(session.term).toEqual(term);
+    registry.applyEvent(promptEvent({ term: {} }));
+    expect(registry.list()[0].term).toEqual(term);
+  });
+
   it('marks session done and unread on Stop', () => {
     const registry = new SessionRegistry();
     registry.applyEvent(promptEvent());

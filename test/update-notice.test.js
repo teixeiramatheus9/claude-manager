@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldAnnounce } from '../src/main/update-notice.js';
+import { shouldAnnounce, shouldAutoApply, updateAnnouncement } from '../src/main/update-notice.js';
 
 describe('shouldAnnounce', () => {
   it('announces when the app came back on the version that was installed', () => {
@@ -13,5 +13,69 @@ describe('shouldAnnounce', () => {
   it('stays quiet without a note', () => {
     expect(shouldAnnounce(null, '0.6.0')).toBe(false);
     expect(shouldAnnounce({}, '0.6.0')).toBe(false);
+  });
+});
+
+describe('shouldAutoApply', () => {
+  const base = { autoUpdate: true, mode: 'notify', available: '0.14.0', ready: null, installing: false, failed: false, attemptedVersion: null };
+
+  it('applies a notify-mode update as soon as one is available', () => {
+    expect(shouldAutoApply(base)).toBe(true);
+  });
+
+  it('applies an auto-mode update only once it finished downloading', () => {
+    expect(shouldAutoApply({ ...base, mode: 'auto', ready: null })).toBe(false);
+    expect(shouldAutoApply({ ...base, mode: 'auto', ready: '0.14.0' })).toBe(true);
+  });
+
+  it('respects the setting being off', () => {
+    expect(shouldAutoApply({ ...base, autoUpdate: false })).toBe(false);
+  });
+
+  it('never retries a version it already tried — a cancelled password prompt must not loop', () => {
+    expect(shouldAutoApply({ ...base, attemptedVersion: '0.14.0' })).toBe(false);
+    expect(shouldAutoApply({ ...base, attemptedVersion: '0.13.9' })).toBe(true);
+  });
+
+  it('stays put mid-install and after a failure', () => {
+    expect(shouldAutoApply({ ...base, installing: true })).toBe(false);
+    expect(shouldAutoApply({ ...base, failed: true })).toBe(false);
+  });
+});
+
+describe('updateAnnouncement', () => {
+  const quiet = { mode: 'auto', available: null, ready: null, installing: false, failed: false };
+
+  it('announces the download starting in auto mode', () => {
+    const text = updateAnnouncement(quiet, { ...quiet, available: '0.14.0' }, true);
+    expect(text).toContain('0.14.0');
+    expect(text).toMatch(/baixa/i);
+  });
+
+  it('announces the restart when a downloaded update will self-apply', () => {
+    const text = updateAnnouncement({ ...quiet, available: '0.14.0' }, { ...quiet, available: '0.14.0', ready: '0.14.0' }, true);
+    expect(text).toContain('0.14.0');
+    expect(text).toMatch(/atualizar/i);
+  });
+
+  it('points at the banner instead when self-apply is off', () => {
+    const text = updateAnnouncement({ ...quiet, available: '0.14.0' }, { ...quiet, available: '0.14.0', ready: '0.14.0' }, false);
+    expect(text).toMatch(/banner/i);
+  });
+
+  it('warns about the password prompt when a notify-mode install starts', () => {
+    const notify = { ...quiet, mode: 'notify', available: '0.14.0' };
+    const text = updateAnnouncement(notify, { ...notify, installing: true }, true);
+    expect(text).toMatch(/senha/i);
+  });
+
+  it('owns up to a failure once', () => {
+    const notify = { ...quiet, mode: 'notify', available: '0.14.0' };
+    expect(updateAnnouncement(notify, { ...notify, failed: true }, true)).toMatch(/release/i);
+    expect(updateAnnouncement({ ...notify, failed: true }, { ...notify, failed: true }, true)).toBeNull();
+  });
+
+  it('says nothing when nothing changed', () => {
+    expect(updateAnnouncement(quiet, { ...quiet }, true)).toBeNull();
   });
 });

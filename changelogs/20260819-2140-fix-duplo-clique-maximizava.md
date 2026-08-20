@@ -1,0 +1,1 @@
+- Duplo clique na bolha ou no painel não "maximiza" mais a janela numa tela cheia toda quebrada: o painel deixava de receber o aviso de modo gerenciado e virava área de arrasto inteira (onde duplo clique maximiza), e agora além do aviso certo a janela desfaz qualquer maximização na hora
