@@ -629,6 +629,9 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (allowed.panelScale && overlayMode === 'panel') showOverlay('panel', { focus: true });
   // Speaking the sample also pulls the model when it is not there yet.
   if (allowed.voice) tts.speak('Voz trocada. Agora eu falo assim!', { voice: allowed.voice });
+  // Turning TTS on is the moment the voice starts being needed — download it
+  // now instead of on the first spoken line.
+  if (allowed.ttsEnabled === true) tts.predownloadVoice(managerConfig.voice);
   return managerConfig;
 });
 
@@ -924,6 +927,12 @@ app.whenReady().then(() => {
     ),
   );
   tts.watchDownloads(() => sendState());
+  // A fresh session otherwise meets the system fallback voice on the first
+  // spoken line. Delayed so the boot (windows, tray, socket) settles first.
+  setTimeout(
+    () => tts.predownloadVoice(managerConfig.voice, { enabled: managerConfig.ttsEnabled }),
+    10_000,
+  );
   announceUpdateIfJustInstalled();
   ensureHooksInstalled();
   hydrateRegistry();

@@ -153,6 +153,16 @@ function ensureVoiceInBackground(voiceId) {
     });
 }
 
+// Pulls the chosen voice down as soon as the app is up instead of on the
+// first spoken line — a fresh install otherwise greets the user with the
+// system fallback voice. Idempotent and quiet: ensureVoiceInBackground skips
+// installed or in-flight voices and swallows failures (the next speak retries).
+export function predownloadVoice(voiceId, { enabled = true, ensureFn = ensureVoiceInBackground } = {}) {
+  if (!enabled) return false;
+  ensureFn(VOICES[voiceId] ? voiceId : DEFAULT_VOICE);
+  return true;
+}
+
 export function speak(
   text,
   {
