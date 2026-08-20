@@ -19,6 +19,7 @@ export const DEFAULT_CONFIG = {
   typeVolumes: { start: 100, done: 100, question: 100, waiting: 100 },
   tokenBudgetDaily: 100000,
   shortcuts: { ...DEFAULT_SHORTCUTS },
+  autoUpdate: true,
 };
 
 export function loadConfig(file) {
