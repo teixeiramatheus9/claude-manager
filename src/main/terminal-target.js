@@ -17,13 +17,36 @@ export const VIA_APP_HINTS = {
   kitty: { darwinApp: 'kitty', classHint: 'kitty', exeHint: null },
   wezterm: { darwinApp: 'WezTerm', classHint: 'wezterm', exeHint: 'wezterm' },
   tmux: { darwinApp: null, classHint: null, exeHint: null },
+  // The url raises Warp and selects the tab by itself. Windows returns right
+  // after it and never reads these; darwin re-activates the app and Linux
+  // raises the window, both harmless belt-and-braces after the url.
+  warp: { darwinApp: 'Warp', classHint: 'warp', exeHint: 'warp' },
 };
+
+// Warp exports WARP_TERMINAL_SESSION_UUID per session and registers a url
+// scheme that focuses exactly that session — window AND tab, on every OS, with
+// no CLI, no keystrokes and no window enumeration. Guarded to hex because the
+// value goes into a url handed to the OS.
+const WARP_UUID = /^[0-9a-f]+$/i;
 
 // Selects the session's tab/pane through its terminal's own CLI. Returns
 // { selected, via } — { selected: false, via: null } when the capture names no
 // controllable terminal or its CLI is unavailable/refused.
-export async function selectExactTab(term, { execFn = execFileAsync } = {}) {
+export async function selectExactTab(term, { execFn = execFileAsync, openUrl } = {}) {
   if (!term || typeof term !== 'object') return { selected: false, via: null };
+
+  // Cheapest route of all — try it before anything that spawns a process.
+  if (term.WARP_TERMINAL_SESSION_UUID && openUrl) {
+    const uuid = String(term.WARP_TERMINAL_SESSION_UUID);
+    if (WARP_UUID.test(uuid)) {
+      try {
+        await openUrl(`warp://session/${uuid}`);
+        return { selected: true, via: 'warp' };
+      } catch {
+        // no handler registered for the scheme — fall through
+      }
+    }
+  }
 
   if (term.KITTY_WINDOW_ID && term.KITTY_LISTEN_ON) {
     try {
