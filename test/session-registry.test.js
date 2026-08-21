@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { SessionRegistry, STATUS, displayName } from '../src/main/session-registry.js';
+import { SessionRegistry, STATUS, displayName, haloState } from '../src/main/session-registry.js';
 
 const promptEvent = (overrides = {}) => ({
   hook_event_name: 'UserPromptSubmit',
@@ -390,5 +390,77 @@ describe('displayName', () => {
     expect(displayName({ ...session, alias: 'front novo' }, { '/h/web': 'API do site' })).toBe(
       'front novo',
     );
+  });
+});
+
+
+// Notification waves on the bubble: colored halo until the user opens the
+// panel — red beats yellow beats green when several chats compete.
+describe('permission asks', () => {
+  const notification = (extra = {}) => ({
+    hook_event_name: 'Notification',
+    session_id: 's1',
+    cwd: '/h/vizor',
+    message: 'quer permissão',
+    ...extra,
+  });
+
+  it('a permission Notification marks the session as needing permission', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent(notification({ permissionAsk: true }));
+    expect(registry.sessions.get('s1').needsPermission).toBe(true);
+  });
+
+  it('a plain idle Notification does not', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent(notification());
+    expect(registry.sessions.get('s1').needsPermission).toBe(false);
+  });
+
+  it('answering (UserPromptSubmit) and finishing (Stop) clear the flag', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent(notification({ permissionAsk: true }));
+    registry.applyEvent({ hook_event_name: 'UserPromptSubmit', session_id: 's1', cwd: '/h/vizor' });
+    expect(registry.sessions.get('s1').needsPermission).toBe(false);
+    registry.applyEvent(notification({ permissionAsk: true }));
+    registry.applyEvent({ hook_event_name: 'Stop', session_id: 's1', cwd: '/h/vizor' });
+    expect(registry.sessions.get('s1').needsPermission).toBe(false);
+  });
+});
+
+describe('haloState', () => {
+  const base = { unread: true, needsPermission: false, question: null };
+
+  it('is null when nothing is unread', () => {
+    expect(haloState([{ ...base, unread: false, status: STATUS.DONE }])).toBeNull();
+  });
+
+  it('green for an unread finished task', () => {
+    expect(haloState([{ ...base, status: STATUS.DONE }])).toBe('done');
+  });
+
+  it('yellow for a pending question or a waiting chat', () => {
+    expect(haloState([{ ...base, status: STATUS.WAITING }])).toBe('question');
+    expect(haloState([{ ...base, status: STATUS.DONE, question: { questions: [] } }])).toBe('question');
+  });
+
+  it('red for a permission ask', () => {
+    expect(haloState([{ ...base, status: STATUS.WAITING, needsPermission: true }])).toBe('permission');
+  });
+
+  it('the most urgent chat wins the bubble', () => {
+    const sessions = [
+      { ...base, status: STATUS.DONE },
+      { ...base, status: STATUS.WAITING },
+      { ...base, status: STATUS.WAITING, needsPermission: true },
+    ];
+    expect(haloState(sessions)).toBe('permission');
+    expect(haloState(sessions.slice(0, 2))).toBe('question');
+  });
+
+  it('a read permission ask no longer glows', () => {
+    expect(
+      haloState([{ ...base, unread: false, status: STATUS.WAITING, needsPermission: true }]),
+    ).toBeNull();
   });
 });

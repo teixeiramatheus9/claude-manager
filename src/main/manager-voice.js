@@ -14,6 +14,12 @@ export const WAITING_PHRASES = [
   'Preciso de você aqui rapidinho!',
 ];
 
+// A permission ask is the red-alert flavor of Notification — detected on the
+// RAW message, because humanizeNotification rewrites it right after.
+export function isPermissionAsk(message) {
+  return /permission to use/i.test(String(message ?? ''));
+}
+
 // Claude Code notifications arrive in English ("Claude is waiting for your
 // input", "Claude needs your permission to use Bash") — turn them into the
 // manager's casual pt-BR voice.

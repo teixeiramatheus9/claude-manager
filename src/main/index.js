@@ -18,10 +18,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildHookCommand, ensureHooks, removeAppHooks } from '../../scripts/install-hooks.js';
-import { SessionRegistry, displayName } from './session-registry.js';
+import { SessionRegistry, displayName, haloState } from './session-registry.js';
 import { startSocketServer, stopSocketServer } from './socket-server.js';
 import { readAiTitle, readConversationTail, readTranscriptSnapshot } from './transcript.js';
-import { generateManagerMessage, humanizeNotification } from './manager-voice.js';
+import { generateManagerMessage, humanizeNotification, isPermissionAsk } from './manager-voice.js';
 import { digestMessage } from './message-digest.js';
 import { askManager, findMentionedSession } from './manager-chat.js';
 import { fallbackMessage } from './manager-voice.js';
@@ -532,6 +532,41 @@ const SPOT_BOX = 220;
 const SPOT_MS = 2400;
 let spotlightTimer = null;
 
+// Notification waves (gentle halo): green = task done, yellow = question or
+// waiting, red = permission ask. Fixed colors on purpose — this is a traffic
+// light, not a theme accent.
+const HALO_COLORS = { done: '#3ecf8e', question: '#e0b341', permission: '#e05561' };
+let haloActive = null;
+
+async function showGentleHalo(state) {
+  await spotlightWindow.webContents.executeJavaScript(
+    `document.body.classList.add('gentle');
+     document.body.style.setProperty('--ring', ${JSON.stringify(HALO_COLORS[state])});`,
+  );
+  spotlightWindow.hide();
+  spotlightWindow.setBounds(spotlightBounds(bubbleAnchor, BUBBLE_BOX, SPOT_BOX));
+  spotlightWindow.showInactive();
+  stayOnTop(spotlightWindow);
+  stayOnTop(mainWindow);
+}
+
+// Keeps the waves in sync with the sessions: called on every registry change
+// and whenever the bubble settles somewhere new. The find-the-bubble flash
+// borrows the window and hands it back through here.
+function updateNotificationHalo() {
+  const state = haloState(registry.list());
+  const positionable = canPositionWindows && Boolean(bubbleAnchor);
+  sendToRenderer('halo', { state: positionable ? null : state });
+  if (spotlightTimer) return; // a find-the-bubble flash is running — after it
+  haloActive = state && positionable ? state : null;
+  if (!spotlightWindow || spotlightWindow.isDestroyed()) return;
+  if (!haloActive) {
+    spotlightWindow.hide();
+    return;
+  }
+  showGentleHalo(haloActive).catch((error) => log(`halo failed: ${error}`));
+}
+
 // The halo rides in its own click-through window: the bubble window is
 // exactly bubble-sized and clips any glow into a square. The ring colour is
 // read live from the bubble's CSS so every theme keeps its own accent.
@@ -542,7 +577,8 @@ async function flashSpotlight() {
       "getComputedStyle(document.body).getPropertyValue('--accent')",
     );
     await spotlightWindow.webContents.executeJavaScript(
-      `document.body.style.setProperty('--ring', ${JSON.stringify(String(accent).trim())})`,
+      `document.body.classList.remove('gentle');
+       document.body.style.setProperty('--ring', ${JSON.stringify(String(accent).trim())})`,
     );
     // positioned while hidden — resizing/moving a visible transparent window
     // ghosts on macOS
@@ -553,7 +589,9 @@ async function flashSpotlight() {
     stayOnTop(mainWindow); // the bubble itself stays above its halo
     clearTimeout(spotlightTimer);
     spotlightTimer = setTimeout(() => {
+      spotlightTimer = null;
       if (spotlightWindow && !spotlightWindow.isDestroyed()) spotlightWindow.hide();
+      updateNotificationHalo(); // hand the window back to the waves
     }, SPOT_MS);
   } catch (error) {
     log(`spotlight failed: ${error}`);
@@ -858,7 +896,11 @@ async function enrichNotification(session) {
 
 function onHookEvent(event) {
   if (event?.hook_event_name === 'Notification') {
-    event = { ...event, message: humanizeNotification(event.message) };
+    event = {
+      ...event,
+      permissionAsk: isPermissionAsk(event.message),
+      message: humanizeNotification(event.message),
+    };
   }
   const session = registry.applyEvent(event);
   if (!session) return;
@@ -1296,6 +1338,7 @@ ipcMain.handle('warp:reply', async (_event, { sessionId, text }) => {
 // the bubble; main polls the cursor, moves the window, and tells the
 // renderer when a press was really just a click.
 ipcMain.on('drag:start', () => {
+  if (spotlightWindow && !spotlightWindow.isDestroyed()) spotlightWindow.hide();
   if (!canPositionWindows || !mainWindow || mainWindow.isDestroyed()) return;
   if (dragState) clearInterval(dragState.timer);
   const startCursor = screen.getCursorScreenPoint();
@@ -1321,6 +1364,7 @@ ipcMain.on('drag:end', () => {
   clearInterval(dragState.timer);
   const wasDragged = dragState.moved;
   dragState = null;
+  updateNotificationHalo(); // the waves follow the bubble to its new spot
   if (!wasDragged) {
     sendToRenderer('ui:click');
     return;
@@ -1491,6 +1535,7 @@ app.whenReady().then(() => {
   socketServer = startSocketServer(socketPath, onHookEvent, log);
   setupTray();
   registry.on('change', sendState);
+  registry.on('change', updateNotificationHalo);
   registry.on('change', scheduleSessionsSave);
   setInterval(() => registry.prune(), PRUNE_INTERVAL_MS);
   setInterval(reapDeadSessions, LIVENESS_INTERVAL_MS);
