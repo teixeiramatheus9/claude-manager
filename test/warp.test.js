@@ -525,6 +525,23 @@ function fakeDriver({ windows, tabTitles = null } = {}) {
   };
 }
 
+describe('focusChatTab on auto with a non-warp terminal', () => {
+  // Black Box (and friends) never put the chat title on the window and have
+  // no control CLI: on 'auto' the hunt used to demand a Warp window and gave
+  // up with terminal-not-in-x — not even raising the terminal the user has.
+  it('raises the only terminal around instead of giving up', async () => {
+    const { execFn, calls } = fakeExec({
+      windows: [
+        { id: '0x1', wmClass: 'google-chrome.Google-chrome', title: 'vizor - Chrome' },
+        { id: '0x2', wmClass: 'blackbox.blackbox', title: 'blackbox' },
+      ],
+    });
+    const result = await focusChatTab(['vizor'], { execFn, delayMs: 0 });
+    expect(result).toMatchObject({ focused: true, tabFound: false, cause: null });
+    expect(calls).toContainEqual({ command: 'xdotool', args: ['windowactivate', '0x2'] });
+  });
+});
+
 describe('focusChatTab via gnome-terminal dbus tabs', () => {
   it('switches tabs through active-tab and never presses a key', async () => {
     let selected = 1;
