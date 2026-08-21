@@ -535,6 +535,29 @@
       .session.working .time {
         color: var(--accent);
       }
+      .session-rename,
+      #mirror-rename {
+        background: none;
+        border: none;
+        color: inherit;
+        opacity: 0.5;
+        cursor: pointer;
+        font: inherit;
+        padding: 0 2px;
+      }
+      .session-rename:hover,
+      #mirror-rename:hover {
+        opacity: 1;
+      }
+      .rename-input {
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        border: none;
+        border-bottom: 1px dashed currentColor;
+        outline: none;
+        width: 70%;
+      }
       .session.waiting .time,
       .session.question .time {
         color: var(--warn);
@@ -1407,6 +1430,7 @@
         <div id="mirror-top">
           <button id="mirror-back" title="Voltar pra lista">[&lt; voltar]</button>
           <span id="mirror-title"></span>
+          <button id="mirror-rename" title="Renomear este chat">✎</button>
         </div>
         <div id="mirror-messages"></div>
         <div id="mirror-input-row">

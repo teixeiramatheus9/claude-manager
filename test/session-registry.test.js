@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { SessionRegistry, STATUS } from '../src/main/session-registry.js';
+import { SessionRegistry, STATUS, displayName } from '../src/main/session-registry.js';
 
 const promptEvent = (overrides = {}) => ({
   hook_event_name: 'UserPromptSubmit',
@@ -345,5 +345,50 @@ describe('adopting sessions found in the live registry', () => {
   it('refuses ids Claude Code could never have issued', () => {
     const registry = new SessionRegistry();
     expect(registry.adopt([found({ sessionId: 'sim-projeto-teste' })])).toBe(0);
+  });
+});
+
+
+// Issue #63: aliases live in their own field — projectName is recomputed from
+// cwd on EVERY event, so writing the alias there would last one hook.
+describe('aliases', () => {
+  const stopEvent = { hook_event_name: 'Stop', session_id: 's1', cwd: '/home/x/vizor' };
+
+  it('setAlias names a session and survives the next hook event', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent(stopEvent);
+    registry.setAlias('s1', 'bolha nova');
+    registry.applyEvent({ ...stopEvent, hook_event_name: 'UserPromptSubmit' });
+    const session = registry.sessions.get('s1');
+    expect(session.alias).toBe('bolha nova');
+    expect(session.projectName).toBe('vizor');
+  });
+
+  it('an empty alias clears the nickname', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent(stopEvent);
+    registry.setAlias('s1', 'x');
+    registry.setAlias('s1', '   ');
+    expect(registry.sessions.get('s1').alias).toBeNull();
+  });
+
+  it('setAlias emits change so persistence and the panel follow', () => {
+    const registry = new SessionRegistry();
+    registry.applyEvent(stopEvent);
+    const onChange = vi.fn();
+    registry.on('change', onChange);
+    registry.setAlias('s1', 'apelido');
+    expect(onChange).toHaveBeenCalled();
+  });
+});
+
+describe('displayName', () => {
+  it('prefers the session alias, then the folder default, then the basename', () => {
+    const session = { alias: null, cwd: '/h/web', projectName: 'web' };
+    expect(displayName(session, {})).toBe('web');
+    expect(displayName(session, { '/h/web': 'API do site' })).toBe('API do site');
+    expect(displayName({ ...session, alias: 'front novo' }, { '/h/web': 'API do site' })).toBe(
+      'front novo',
+    );
   });
 });

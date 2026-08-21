@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('manager', {
   applyUpdate: () => ipcRenderer.send('update:apply'),
   checkUpdates: () => ipcRenderer.invoke('update:check'),
   dismissHint: () => ipcRenderer.send('hint:dismiss'),
+  renameSession: (sessionId, alias) => ipcRenderer.send('session:rename', { sessionId, alias }),
   bridgeStatus: () => ipcRenderer.invoke('bridge:status'),
   bridgeInstall: () => ipcRenderer.invoke('bridge:install'),
   bridgeUninstall: () => ipcRenderer.invoke('bridge:uninstall'),

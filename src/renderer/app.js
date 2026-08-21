@@ -13,7 +13,7 @@ const PATHS = { sessions: '~/.claude/sessions', chat: '~/.claude/chats', config:
 
 function renderHeaderPath() {
   if (mirrorSession) {
-    headerPath.textContent = `~/.claude/sessions/${mirrorSession.projectName}`;
+    headerPath.textContent = `~/.claude/sessions/${mirrorSession.displayName ?? mirrorSession.projectName}`;
     return;
   }
   const view = chatOpen ? 'chat' : settingsPop.classList.contains('hidden') ? 'sessions' : 'config';
@@ -203,6 +203,7 @@ chatInput.addEventListener('keydown', (event) => {
 const mirrorView = document.getElementById('mirror');
 const mirrorMessages = document.getElementById('mirror-messages');
 const mirrorTitle = document.getElementById('mirror-title');
+const mirrorRename = document.getElementById('mirror-rename');
 const mirrorInput = document.getElementById('mirror-input');
 const mirrorSend = document.getElementById('mirror-send');
 let mirrorSession = null;
@@ -245,7 +246,12 @@ function setMirrorOpen(session) {
   sessionsContainer.classList.toggle('hidden', open);
   if (open) {
     settingsPop.classList.add('hidden');
-    mirrorTitle.textContent = session.title ?? session.promptPreview ?? session.projectName;
+    mirrorTitle.textContent =
+      session.title ?? session.promptPreview ?? session.displayName ?? session.projectName;
+    mirrorRename.onclick = () => {
+      const alias = prompt('Apelido deste chat (vazio limpa):', session.alias ?? '');
+      if (alias !== null) window.manager.renameSession(session.id, alias);
+    };
     mirrorMessages.replaceChildren();
     refreshMirror();
     // The transcript is written by another process, so the mirror polls while
@@ -914,6 +920,39 @@ window.manager.onTooltip(({ projectName, text, kind, optionsCount }) => {
   tooltipText.textContent = text;
 });
 
+// Inline nickname editor (issue #63): swaps the folder line for an input;
+// Enter saves (empty clears the nickname), Esc walks away.
+function startRename(container, session) {
+  const input = document.createElement('input');
+  input.className = 'rename-input';
+  input.value = session.alias ?? '';
+  input.placeholder = session.projectName;
+  input.maxLength = 60;
+  container.replaceChildren('└ ', input);
+  input.focus();
+  input.select();
+  let finished = false;
+  const finish = (save) => {
+    if (finished) return; // Enter also blurs — send once
+    finished = true;
+    if (save) {
+      window.manager.renameSession(session.id, input.value);
+    } else {
+      const hasAlias = session.displayName && session.displayName !== session.projectName;
+      container.replaceChildren(
+        hasAlias ? `└ ${session.displayName} (${session.projectName})` : `└ ${session.projectName}`,
+      );
+    }
+  };
+  input.addEventListener('click', (event) => event.stopPropagation());
+  input.addEventListener('keydown', (event) => {
+    event.stopPropagation();
+    if (event.key === 'Enter') finish(true);
+    if (event.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
 function relativeTime(timestamp) {
   const seconds = Math.round((Date.now() - timestamp) / 1000);
   if (seconds < 60) return 'agora';
@@ -1077,7 +1116,19 @@ function sessionElement(session) {
 
   const project = document.createElement('div');
   project.className = 'title';
-  project.textContent = `└ ${session.projectName}`;
+  const hasAlias = session.displayName && session.displayName !== session.projectName;
+  project.textContent = hasAlias
+    ? `└ ${session.displayName} (${session.projectName})`
+    : `└ ${session.projectName}`;
+  const rename = document.createElement('button');
+  rename.className = 'session-rename';
+  rename.textContent = '✎';
+  rename.title = 'Renomear este chat';
+  rename.addEventListener('click', (event) => {
+    event.stopPropagation();
+    startRename(project, session);
+  });
+  project.append(' ', rename);
   card.append(project);
 
   // One message balloon per chat — the exact text that went out in the

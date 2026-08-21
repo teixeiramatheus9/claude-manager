@@ -48,6 +48,7 @@ export class SessionRegistry extends EventEmitter {
       wave: null,
       term: null,
       seenAlive: false,
+      alias: null,
     };
     if (event.wave?.blockId) session.wave = event.wave;
     if (event.term && typeof event.term === 'object' && Object.keys(event.term).length) {
@@ -209,6 +210,15 @@ export class SessionRegistry extends EventEmitter {
     if (changed) this.emit('change');
   }
 
+  // A nickname is display-only: projectName keeps feeding the tab hunt, and
+  // applyEvent recomputing it from cwd never touches the alias.
+  setAlias(sessionId, alias) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.alias = String(alias ?? '').trim() || null;
+    this.emit('change');
+  }
+
   serialize() {
     return [...this.sessions.values()];
   }
@@ -227,4 +237,10 @@ export class SessionRegistry extends EventEmitter {
   list() {
     return [...this.sessions.values()].sort((a, b) => b.updatedAt - a.updatedAt);
   }
+}
+
+// What the manager shows and speaks for a session: the chat's own nickname,
+// else the folder's default nickname, else the plain basename.
+export function displayName(session, folderAliases = {}) {
+  return session?.alias ?? folderAliases[session?.cwd] ?? session?.projectName;
 }

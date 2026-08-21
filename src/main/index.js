@@ -18,7 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildHookCommand, ensureHooks, removeAppHooks } from '../../scripts/install-hooks.js';
-import { SessionRegistry } from './session-registry.js';
+import { SessionRegistry, displayName } from './session-registry.js';
 import { startSocketServer, stopSocketServer } from './socket-server.js';
 import { readAiTitle, readConversationTail, readTranscriptSnapshot } from './transcript.js';
 import { generateManagerMessage, humanizeNotification } from './manager-voice.js';
@@ -150,6 +150,13 @@ function autoSetupBridgeOnWayland() {
 // Bark or stay silent (issue #66): the card always updates, but chime, voice
 // and balloon only fire when the user is NOT already looking at that chat.
 const lastAnnouncements = new Map(); // sessionId → { text, at }
+
+// Nickname resolution (issue #63): what the manager shows and speaks. The tab
+// hunt keeps using cwd/projectName — the alias is display/speech only.
+const displayNameOf = (session) => displayName(session, managerConfig.folderAliases);
+
+const listWithDisplayNames = () =>
+  registry.list().map((session) => ({ ...session, displayName: displayNameOf(session) }));
 
 async function sessionFocused(session) {
   if (process.platform !== 'linux') return null; // V1: no probe elsewhere
@@ -315,7 +322,7 @@ let announcedUpdateVersion = null;
 
 function sendState() {
   sendToRenderer('state', {
-    sessions: registry.list(),
+    sessions: listWithDisplayNames(),
     unread: registry.unreadCount(),
     update: updateStatus,
     hint: lastHint,
@@ -797,17 +804,17 @@ async function generateVoiceForStop(session) {
   registry.setLastMessage(session.id, digestMessage(snapshot.lastAssistantMessage));
   let voice;
   if (isEconomyMode()) {
-    voice = fallbackMessage(session.projectName);
+    voice = fallbackMessage(displayNameOf(session));
   } else {
     voice = await generateManagerMessage({
-      projectName: session.projectName,
+      projectName: displayNameOf(session),
       lastAssistantMessage: snapshot.lastAssistantMessage,
     });
     tokenBudget.add(voice.tokensUsed);
   }
   registry.setManagerMessage(session.id, voice);
   if (await allowAnnouncement(session, 'done', voice.message)) {
-    sendToRenderer('tooltip', { projectName: session.projectName, text: voice.message, kind: 'done' });
+    sendToRenderer('tooltip', { projectName: displayNameOf(session), text: voice.message, kind: 'done' });
     showTooltip();
   }
 }
@@ -840,7 +847,7 @@ async function enrichNotification(session) {
   const kind = firstQuestion ? 'question' : 'waiting';
   if (await allowAnnouncement(session, kind, text)) {
     sendToRenderer('tooltip', {
-      projectName: session.projectName,
+      projectName: displayNameOf(session),
       text,
       kind,
       optionsCount: firstQuestion?.options?.length ?? 0,
@@ -867,6 +874,24 @@ function onHookEvent(event) {
 ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('session:remove', (_event, sessionId) => registry.remove(sessionId));
+
+// Renaming a chat also becomes the folder's default nickname, so the next
+// chat in that folder is born with it (and can be renamed over). Clearing
+// the alias clears both.
+ipcMain.on('session:rename', (_event, { sessionId, alias }) => {
+  const session = registry.sessions.get(sessionId);
+  if (!session) return;
+  const clean = String(alias ?? '').trim().slice(0, 60);
+  registry.setAlias(sessionId, clean);
+  const folderAliases = { ...managerConfig.folderAliases };
+  if (session.cwd) {
+    if (clean) folderAliases[session.cwd] = clean;
+    else delete folderAliases[session.cwd];
+  }
+  managerConfig = { ...managerConfig, folderAliases };
+  saveConfig(configFile, managerConfig);
+  sendState();
+});
 
 // The panel's rescan: adopt the live interactive chats the hooks never
 // reported — opened before the manager was up, or closed on the ✕.
@@ -926,7 +951,7 @@ ipcMain.handle('manager:chat', async (_event, rawMessage) => {
   const userMessage = String(rawMessage ?? '').trim().slice(0, 1000);
   if (!userMessage) return '';
   if (isEconomyMode()) return ECONOMY_CHAT_REPLY;
-  const sessions = registry.list();
+  const sessions = listWithDisplayNames();
   const mentioned = findMentionedSession(sessions, userMessage);
   const transcriptExcerpt = mentioned?.transcriptPath
     ? (await readTranscriptSnapshot(mentioned.transcriptPath)).lastAssistantMessage
