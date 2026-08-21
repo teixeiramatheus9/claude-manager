@@ -333,9 +333,13 @@ export async function focusChatTab(
       }
     }
 
-    const anyPreferred = windows.find(isPreferred);
-    if (anyPreferred) {
-      await drv.activate(anyPreferred.id);
+    // No preferred window and no title match: raise ANY terminal rather than
+    // give up — terminals like Black Box never announce the chat in the
+    // window title, and a raised window beats a silent failure (same spirit
+    // as raising "any Warp" above).
+    const anyTerminal = windows.find(isPreferred) ?? windows[0];
+    if (anyTerminal) {
+      await drv.activate(anyTerminal.id);
       return { focused: true, tabFound: false, matchedTitle: null, cause: null };
     }
     return { focused: false, tabFound: false, matchedTitle: null, cause: 'terminal-not-in-x' };
