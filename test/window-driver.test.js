@@ -97,3 +97,46 @@ describe('resolveWindowDriver', () => {
     expect(kind).toBe('xdotool');
   });
 });
+
+
+describe('activeWindow', () => {
+  it('xdotool: reports the focused window with title and class', async () => {
+    const execFn = async (command, args) => {
+      if (command === 'xdotool' && args[0] === 'getactivewindow') return { stdout: '42\n' };
+      if (command === 'xdotool' && args[0] === 'getwindowname') return { stdout: 'vizor — claude\n' };
+      if (command === 'xprop') return { stdout: 'WM_CLASS(STRING) = "kitty", "kitty"' };
+      return { stdout: '' };
+    };
+    expect(await xdotoolDriver({ execFn }).activeWindow()).toEqual({
+      title: 'vizor — claude',
+      wmClass: 'kitty.kitty',
+    });
+  });
+
+  it('xdotool: is null when the active window cannot be read', async () => {
+    const execFn = async () => {
+      throw new Error('no display');
+    };
+    expect(await xdotoolDriver({ execFn }).activeWindow()).toBeNull();
+  });
+
+  it('bridge: picks the focused entry from the compositor list', async () => {
+    const { execFn } = fakeBridgeExec({
+      windows: [
+        { id: '1', wmClass: 'blackbox', appId: '', title: 'outra', focused: false },
+        { id: '2', wmClass: 'gnome-terminal-server', appId: '', title: 'vizor — claude', focused: true },
+      ],
+    });
+    expect(await bridgeDriver({ execFn }).activeWindow()).toEqual({
+      title: 'vizor — claude',
+      wmClass: 'gnome-terminal-server',
+    });
+  });
+
+  it('bridge: reports an empty focus when no listed window is active', async () => {
+    const { execFn } = fakeBridgeExec({
+      windows: [{ id: '1', wmClass: 'blackbox', appId: '', title: 'outra', focused: false }],
+    });
+    expect(await bridgeDriver({ execFn }).activeWindow()).toEqual({ title: '', wmClass: '' });
+  });
+});

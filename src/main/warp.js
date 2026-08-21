@@ -177,7 +177,7 @@ const TERMINAL_CLASS_HINTS = [
   'wezterm',
 ];
 
-function isTerminalWindow(window) {
+export function isTerminalWindow(window) {
   const wmClass = window.wmClass.toLowerCase();
   return TERMINAL_CLASS_HINTS.some((hint) => wmClass.includes(hint));
 }

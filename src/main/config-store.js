@@ -21,6 +21,7 @@ export const DEFAULT_CONFIG = {
   shortcuts: { ...DEFAULT_SHORTCUTS },
   autoUpdate: true,
   bridgeAutoSetupDone: false,
+  announceWhenFocusUnknown: true,
 };
 
 export function loadConfig(file) {

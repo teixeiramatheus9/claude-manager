@@ -43,6 +43,27 @@ export function xdotoolDriver({ execFn = execFileAsync } = {}) {
     typeText: async (text) => {
       await execFn('xdotool', ['type', '--clearmodifiers', '--delay', '25', '--', text]);
     },
+    // The focused window right now — the notify policy checks whether it is
+    // the chat's own terminal before barking. null = no way to tell.
+    activeWindow: async () => {
+      try {
+        const { stdout: idOut } = await execFn('xdotool', ['getactivewindow']);
+        const id = String(idOut ?? '').trim();
+        if (!id) return null;
+        const { stdout: titleOut } = await execFn('xdotool', ['getwindowname', id]);
+        let wmClass = '';
+        try {
+          const { stdout } = await execFn('xprop', ['-id', id, 'WM_CLASS']);
+          const match = String(stdout ?? '').match(/"([^"]*)",\s*"([^"]*)"/);
+          if (match) wmClass = `${match[1]}.${match[2]}`;
+        } catch {
+          // class unreadable — an empty class reads as "not a terminal"
+        }
+        return { title: String(titleOut ?? '').trim(), wmClass };
+      } catch {
+        return null;
+      }
+    },
   };
 }
 
@@ -67,6 +88,18 @@ export function bridgeDriver({ execFn = execFileAsync } = {}) {
     },
     typeText: async (text) => {
       await callBridge(execFn, 'TypeText', [toB64(text)]);
+    },
+    activeWindow: async () => {
+      try {
+        const list = JSON.parse(fromB64(await callBridge(execFn, 'ListWindows')) || '[]');
+        const focused = list.find((window) => window.focused);
+        return {
+          title: focused?.title ?? '',
+          wmClass: focused ? focused.wmClass || focused.appId || '' : '',
+        };
+      } catch {
+        return null;
+      }
     },
   };
 }
