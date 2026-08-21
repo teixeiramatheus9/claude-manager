@@ -497,12 +497,24 @@ function applyBounds(win, bounds) {
 // positioning there, and no such fade either.
 const PARK = { x: -32000, y: -32000 };
 
-// The parking trick exists for Windows' DWM cloak fade ONLY. On X11 it
-// backfires twice: setOpacity is a no-op on Linux (the window stays fully
-// visible) and mutter bounces the -32000 move back into the screen — the
-// "parked" window lands visible, click-through and unclosable in the
-// top-left corner. Linux and macOS have no show-fade: hidden means hide().
-const PARKING_PLATFORM = process.platform === 'win32';
+// Where parking beats hiding is a property of the window manager, not of
+// the OS name:
+// - win32: park — DWM plays a ~200ms cloak fade on every show of a hidden
+//   window (the blink parking exists to kill);
+// - darwin: park — setOpacity is real and Quartz never clamps an offscreen
+//   window back into view;
+// - Wayland session (the app runs under XWayland): park — mutter re-places
+//   a REMAPPED X window at the screen corner (position set while hidden is
+//   ignored at map), so the window must never unmap; and mutter-on-Wayland
+//   does not clamp offscreen X windows, so parked really means gone;
+// - real X11 session: hide — the exact opposite: mutter-on-X11 bounces the
+//   -32000 move back into the screen AND setOpacity is a no-op on Linux, so
+//   a "parked" window sits visible and unclosable in the corner, while a
+//   remapped window keeps its position fine.
+const PARKING_PLATFORM =
+  process.platform === 'win32' ||
+  process.platform === 'darwin' ||
+  (process.platform === 'linux' && !displayMode.canInjectInput);
 
 function parkWindow(win) {
   if (!win || win.isDestroyed()) return;
