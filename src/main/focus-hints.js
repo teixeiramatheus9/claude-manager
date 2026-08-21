@@ -109,3 +109,16 @@ export function linuxFocusHint(result, term, { canInjectInput = true, bridge = '
   }
   return null;
 }
+
+// One hint, three surfaces (issue #62): the balloon shows the actionable body
+// (voice is the worst medium for "sudo apt install ..."), the system
+// notification mirrors it, and the speech line is spoken by the MAIN process
+// only — kind 'hint' tells the renderer to add no speech of its own.
+export function hintAnnouncement(hint) {
+  if (!hint) return null;
+  return {
+    tooltip: { projectName: 'Vizor', text: hint.body, kind: 'hint' },
+    notification: { title: hint.title, body: hint.body },
+    speech: hint.speech,
+  };
+}

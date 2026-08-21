@@ -874,6 +874,7 @@ const TOAST_TITLE = {
   question: 'pergunta pendente',
   waiting: 'esperando você',
   start: 'início de task',
+  hint: 'aviso do gerente',
 };
 
 document.getElementById('toast-open').addEventListener('click', openPanel);
@@ -883,7 +884,9 @@ document.getElementById('toast-close').addEventListener('click', (event) => {
 });
 
 window.manager.onTooltip(({ projectName, text, kind, optionsCount }) => {
-  if (view === 'bubble') {
+  // kind 'hint' is a manager warning: the MAIN process already spoke it
+  // (speakAsManager), so the balloon adds no chime and no second voice.
+  if (view === 'bubble' && kind !== 'hint') {
     chime(kind);
     if (ttsEnabled && !muted) {
       const phrase = TTS_PHRASES[kind] ?? TTS_PHRASES.waiting;
@@ -891,8 +894,8 @@ window.manager.onTooltip(({ projectName, text, kind, optionsCount }) => {
     }
   }
   const alert = kind === 'question' || kind === 'waiting';
-  toastMark.textContent = alert ? '●' : '✓';
-  toastMark.classList.toggle('warn', alert);
+  toastMark.textContent = kind === 'hint' ? '⚠' : alert ? '●' : '✓';
+  toastMark.classList.toggle('warn', alert || kind === 'hint');
   tooltipProject.textContent = TOAST_TITLE[kind] ?? TOAST_TITLE.done;
   toastOrigin.textContent = `${projectName} · agora`;
   tooltipText.textContent = text;
@@ -1149,6 +1152,19 @@ function renderBadge(sessions) {
 const updateBanner = document.getElementById('update-banner');
 updateBanner.addEventListener('click', () => window.manager.applyUpdate());
 
+// A hint balloon evaporates in 8s; the panel keeps the last one until the
+// user dismisses it, so whoever was away from the keyboard still finds it.
+const hintBanner = document.getElementById('hint-banner');
+const hintBannerText = document.getElementById('hint-banner-text');
+document.getElementById('hint-banner-close').addEventListener('click', () => {
+  window.manager.dismissHint();
+});
+
+function renderHintBanner(hint) {
+  hintBanner.classList.toggle('hidden', !hint);
+  if (hint) hintBannerText.textContent = `⚠ ${hint.body}`;
+}
+
 function renderUpdateBanner(update) {
   if (!update || (!update.available && !update.ready)) {
     updateBanner.classList.add('hidden');
@@ -1233,6 +1249,7 @@ window.manager.onState((state) => {
   applySound(state.sound);
   renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);
+  renderHintBanner(state.hint);
   renderVoiceStatus(state.voiceDownloading);
   renderTrayStatus(state.trayNeedsRelogin);
   renderUsage(state.tokens);
