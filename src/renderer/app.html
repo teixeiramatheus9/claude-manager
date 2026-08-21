@@ -1350,6 +1350,20 @@
           <input id="auto-update" type="checkbox" />
           <span id="auto-update-state">[on]</span>
         </label>
+        <div id="bridge-section" class="hidden">
+          <div class="setting-subtitle"># ponte do gnome (wayland)</div>
+          <div class="setting-hint">
+            no wayland o sistema esconde as janelas dos terminais. a ponte é uma
+            extensãozinha do gnome que devolve ao vizor o poder de te levar
+            direto pra aba do chat.
+          </div>
+          <div class="setting-hint" id="bridge-state"></div>
+          <div class="setting-actions">
+            <span class="prompt">❯</span>
+            <button id="bridge-install">[instalar ponte]</button>
+            <button id="bridge-uninstall" class="hidden">[remover ponte]</button>
+          </div>
+        </div>
         <div class="setting-actions">
           <span class="prompt">❯</span>
           <button id="sound-test">[testar som]</button>
