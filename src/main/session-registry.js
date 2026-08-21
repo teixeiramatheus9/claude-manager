@@ -20,10 +20,15 @@ function isClaudeSessionId(sessionId) {
 }
 
 export class SessionRegistry extends EventEmitter {
-  constructor({ maxAgeMs = DEFAULT_MAX_AGE_MS, now = () => Date.now() } = {}) {
+  constructor({ maxAgeMs = DEFAULT_MAX_AGE_MS, now = () => Date.now(), folderAliasFor } = {}) {
     super();
     this.maxAgeMs = maxAgeMs;
     this.now = now;
+    // Folder defaults baptize NEWBORN sessions only (the name becomes the
+    // session's own alias, renameable after). Applying them at display time
+    // instead renamed every chat in the folder at once — the very confusion
+    // aliases exist to solve.
+    this.folderAliasFor = folderAliasFor ?? (() => null);
     this.sessions = new Map();
   }
 
@@ -32,6 +37,7 @@ export class SessionRegistry extends EventEmitter {
     const sessionId = event?.session_id;
     if (!sessionId || !HANDLED_EVENTS.includes(eventName)) return null;
 
+    const isNew = !this.sessions.has(sessionId);
     const session = this.sessions.get(sessionId) ?? {
       id: sessionId,
       cwd: '',
@@ -58,6 +64,7 @@ export class SessionRegistry extends EventEmitter {
     if (event.cwd) {
       session.cwd = event.cwd;
       session.projectName = path.basename(event.cwd);
+      if (isNew) session.alias = this.folderAliasFor(event.cwd) ?? null;
     }
     if (event.transcript_path) session.transcriptPath = event.transcript_path;
     session.updatedAt = this.now();
@@ -245,10 +252,11 @@ export class SessionRegistry extends EventEmitter {
   }
 }
 
-// What the manager shows and speaks for a session: the chat's own nickname,
-// else the folder's default nickname, else the plain basename.
-export function displayName(session, folderAliases = {}) {
-  return session?.alias ?? folderAliases[session?.cwd] ?? session?.projectName;
+// What the manager shows and speaks for a session: the chat's OWN nickname,
+// else the plain basename. Folder defaults never appear here — they only
+// baptize newborns (see the constructor).
+export function displayName(session) {
+  return session?.alias ?? session?.projectName;
 }
 
 // Which wave the bubble should emit: the most urgent unread state across all
