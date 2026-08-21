@@ -51,7 +51,25 @@ export function win32FocusHint(result) {
 // missing tool or a terminal config, and both fail silently. This maps a
 // failed focus to the one hint worth showing — null when there is nothing
 // actionable to say.
-export function linuxFocusHint(result, term) {
+export function linuxFocusHint(result, term, { canInjectInput = true } = {}) {
+  // On a Wayland session, GNOME's terminals (GNOME Terminal, Console, Ptyxis)
+  // run Wayland-native and never show up to xdotool: the click silently did
+  // nothing. Only the Wayland case earns the hint — on plain X11 the same
+  // cause just means no terminal window is open, and nagging helps nobody.
+  if (result?.cause === 'terminal-not-in-x' && !canInjectInput) {
+    return {
+      key: 'wayland-terminal',
+      title: 'O Wayland esconde teu terminal de mim',
+      body:
+        'Nessa sessão Wayland eu não consigo enxergar nem focar a janela do teu ' +
+        'terminal — o sistema não deixa. A resposta rápida pelo card continua ' +
+        'funcionando; pra ir direto pra aba certa, usa kitty, WezTerm ou Warp ' +
+        '(esses têm canal próprio) ou entra numa sessão Xorg.',
+      speech:
+        'O Wayland não me deixa achar a janela do teu terminal! Responde pelo card ' +
+        'mesmo, ou usa um terminal tipo kitty ou Warp que eu alcanço.',
+    };
+  }
   if (result?.cause === 'no-x-windows' || result?.cause === 'xdotool-failed') {
     return {
       key: 'xdotool',

@@ -3,3 +3,6 @@
   o Vizor lê a classe da janela pelo xprop quando o xdotool não sabe.
 - A caçada de aba ignora janelas fantasma que o terminal mantém invisíveis —
   antes elas podiam receber as teclas de troca de aba no lugar do app errado.
+- No Wayland, quando o terminal está fora do alcance (GNOME Terminal, Console,
+  Ptyxis), o gerente agora explica o limite e sugere caminhos — antes o clique
+  falhava sem dizer nada.
