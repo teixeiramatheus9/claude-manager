@@ -113,6 +113,15 @@ const canPositionWindows = displayMode.managed;
 // Wayland when it answers. Cached briefly so a click never pays two probes.
 let cachedDriver = null;
 let cachedDriverAt = 0;
+
+// 'none' | 'asleep' | 'active' — the hint pipeline says different things for
+// "install the bridge", "relogin to wake it" and "it works, terminal is gone".
+async function bridgeStateForHints() {
+  if (displayMode.canInjectInput) return 'none'; // X11: hints never look at it
+  const status = await bridgeStatus();
+  if (!status.installed) return 'none';
+  return status.responding ? 'active' : 'asleep';
+}
 async function windowDriver() {
   if (!cachedDriver || Date.now() - cachedDriverAt > 30_000) {
     cachedDriver = await resolveWindowDriver({ canInjectInput: displayMode.canInjectInput });
@@ -1066,7 +1075,10 @@ async function huntSessionTab(session) {
     if (process.platform === 'darwin') nudgeMacosPermissions();
     else if (process.platform === 'linux')
       nudgeFocusPrereqs(
-        linuxFocusHint(result, session?.term, { canInjectInput: displayMode.canInjectInput }),
+        linuxFocusHint(result, session?.term, {
+          canInjectInput: displayMode.canInjectInput,
+          bridge: await bridgeStateForHints(),
+        }),
         'linux',
       );
     else if (process.platform === 'win32') nudgeFocusPrereqs(win32FocusHint(result), 'win32');

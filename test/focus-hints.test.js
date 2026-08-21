@@ -25,6 +25,33 @@ describe('linuxFocusHint', () => {
     expect(hint.speech).toBeTruthy();
   });
 
+  it('points at the bridge install button when there is no bridge', () => {
+    const hint = linuxFocusHint({ tabFound: false, cause: 'terminal-not-in-x' }, null, {
+      canInjectInput: false,
+      bridge: 'none',
+    });
+    expect(hint?.key).toBe('wayland-terminal');
+    expect(hint.body).toContain('ponte');
+  });
+
+  it('asks for a relogin when the bridge is installed but asleep', () => {
+    const hint = linuxFocusHint({ tabFound: false, cause: 'terminal-not-in-x' }, null, {
+      canInjectInput: false,
+      bridge: 'asleep',
+    });
+    expect(hint?.key).toBe('bridge-asleep');
+    expect(hint.speech).toBeTruthy();
+  });
+
+  it('stays quiet on wayland when the bridge is active (terminal is just closed)', () => {
+    expect(
+      linuxFocusHint({ tabFound: false, cause: 'terminal-not-in-x' }, null, {
+        canInjectInput: false,
+        bridge: 'active',
+      }),
+    ).toBeNull();
+  });
+
   it('stays quiet about terminal-not-in-x on a plain X11 session', () => {
     expect(
       linuxFocusHint({ tabFound: false, cause: 'terminal-not-in-x' }, null, {
