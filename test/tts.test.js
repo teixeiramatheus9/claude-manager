@@ -198,4 +198,14 @@ describe('speakableText', () => {
   it('never touches Vizor inside another word', () => {
     expect(speakableText('supervizor de plantão')).toBe('supervizor de plantão');
   });
+
+  // The shim sits inside speak(), so DYNAMIC text is covered too: a folder
+  // literally named "vizor" arriving via projectName comes out right.
+  it('fixes the pronunciation in dynamic text like folder names', () => {
+    const projectName = 'vizor'; // basename of ~/vizor
+    expect(speakableText(`Tarefa concluída no ${projectName}.`)).toBe(
+      'Tarefa concluída no Váizor.',
+    );
+    expect(speakableText(`O chat vizor espera você.`)).toBe('O chat Váizor espera você.');
+  });
 });
