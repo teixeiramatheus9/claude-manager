@@ -82,3 +82,29 @@ export async function bridgeStatus({
   const responding = installed ? await bridgeResponding({ execFn }) : false;
   return { installed, enabled, responding };
 }
+
+// First boot on a Wayland session sets the bridge up by itself (the extension
+// is part of the app the user chose to install); every later boot only keeps
+// the files in sync with the bundled copy, so an uninstall through the panel
+// is a respected opt-out — `done` never lets auto-setup reinstall it.
+export async function autoSetupBridge({
+  done,
+  markDone,
+  execFn = execFileAsync,
+  fsImpl = fs,
+  home = os.homedir(),
+  sourceDir = bundledExtensionDir(),
+  probeAttempts = 3,
+  probeDelayMs = 700,
+} = {}) {
+  if (done) {
+    const status = await bridgeStatus({ execFn, fsImpl, home });
+    if (status.installed) {
+      fsImpl.cpSync(sourceDir, targetDir(home), { recursive: true });
+    }
+    return { ran: false, active: status.responding };
+  }
+  const result = await installBridge({ execFn, fsImpl, home, sourceDir, probeAttempts, probeDelayMs });
+  markDone();
+  return { ran: true, active: result.active };
+}

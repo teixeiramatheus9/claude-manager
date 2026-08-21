@@ -3,6 +3,7 @@ import {
   installBridge,
   uninstallBridge,
   bridgeStatus,
+  autoSetupBridge,
   BRIDGE_UUID,
 } from '../src/main/bridge-manager.js';
 
@@ -71,5 +72,55 @@ describe('uninstallBridge', () => {
     });
     expect(calls).toContainEqual(['gnome-extensions', 'disable', BRIDGE_UUID]);
     expect(fsImpl.rmSync).toHaveBeenCalled();
+  });
+});
+
+
+describe('autoSetupBridge', () => {
+  const base = { home: '/h', sourceDir: '/s', probeAttempts: 1, probeDelayMs: 0 };
+
+  it('installs and enables on the first wayland boot and marks it done', async () => {
+    const fsImpl = fakeFs();
+    let marked = false;
+    const result = await autoSetupBridge({
+      ...base,
+      execFn: execOk,
+      fsImpl,
+      done: false,
+      markDone: () => {
+        marked = true;
+      },
+    });
+    expect(result).toEqual({ ran: true, active: true });
+    expect(fsImpl.cpSync).toHaveBeenCalled();
+    expect(marked).toBe(true);
+  });
+
+  it('never reinstalls after done — an uninstall is an opt-out', async () => {
+    const fsImpl = fakeFs(); // bridge dir absent: the user removed it
+    const result = await autoSetupBridge({
+      ...base,
+      execFn: execOk,
+      fsImpl,
+      done: true,
+      markDone: () => {
+        throw new Error('must not re-mark');
+      },
+    });
+    expect(result).toEqual({ ran: false, active: false });
+    expect(fsImpl.cpSync).not.toHaveBeenCalled();
+  });
+
+  it('keeps the files in sync with the bundled copy when already installed', async () => {
+    const fsImpl = fakeFs([BRIDGE_UUID]);
+    const result = await autoSetupBridge({
+      ...base,
+      execFn: execOk,
+      fsImpl,
+      done: true,
+      markDone: () => {},
+    });
+    expect(result).toEqual({ ran: false, active: true });
+    expect(fsImpl.cpSync).toHaveBeenCalled(); // refresh on app updates
   });
 });

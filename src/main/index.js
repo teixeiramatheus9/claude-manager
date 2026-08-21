@@ -80,7 +80,7 @@ import {
 } from './permissions-darwin.js';
 import { linuxFocusHint, win32FocusHint } from './focus-hints.js';
 import { resolveWindowDriver } from './window-driver.js';
-import { installBridge, uninstallBridge, bridgeStatus } from './bridge-manager.js';
+import { installBridge, uninstallBridge, bridgeStatus, autoSetupBridge } from './bridge-manager.js';
 import { sendUserMessage } from './cc-peer.js';
 
 // Two window-management modes:
@@ -113,6 +113,38 @@ const canPositionWindows = displayMode.managed;
 // Wayland when it answers. Cached briefly so a click never pays two probes.
 let cachedDriver = null;
 let cachedDriverAt = 0;
+
+// The bridge is part of the app, so the first boot on a Wayland session sets
+// it up by itself and the manager announces what happened. Removing it in the
+// settings is an opt-out: auto-setup runs once per user, never again.
+function autoSetupBridgeOnWayland() {
+  if (process.platform !== 'linux' || displayMode.canInjectInput) return;
+  autoSetupBridge({
+    done: managerConfig.bridgeAutoSetupDone,
+    markDone: () => {
+      managerConfig = { ...managerConfig, bridgeAutoSetupDone: true };
+      saveConfig(configFile, managerConfig);
+    },
+  })
+    .then((result) => {
+      cachedDriver = null; // pick the bridge up on the next focus click
+      if (!result.ran) return;
+      speakAsManager(
+        result.active
+          ? 'Instalei a ponte do GNOME! Agora eu te levo direto pra aba do teu chat.'
+          : 'Instalei a ponte do GNOME! Sai e entra da sessão que aí eu alcanço teu terminal.',
+      );
+      sendToRenderer('tooltip', {
+        projectName: 'Vizor',
+        text: result.active
+          ? 'Ponte do GNOME instalada e ativa — foco de aba liberado.'
+          : 'Ponte do GNOME instalada — sai e entra da sessão pra ativar.',
+        kind: 'done',
+      });
+      showTooltip();
+    })
+    .catch((error) => log(`bridge auto-setup failed: ${error}`));
+}
 
 // 'none' | 'asleep' | 'active' — the hint pipeline says different things for
 // "install the bridge", "relogin to wake it" and "it works, terminal is gone".
@@ -1366,6 +1398,7 @@ app.whenReady().then(() => {
   announceUpdateIfJustInstalled();
   renewMacosGrantAfterUpdate();
   ensureHooksInstalled();
+  autoSetupBridgeOnWayland();
   hydrateRegistry();
   reapDeadSessions();
   createWindows();
