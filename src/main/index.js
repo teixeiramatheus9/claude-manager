@@ -497,12 +497,16 @@ function showTooltip() {
 }
 
 ipcMain.on('overlay:toggle-panel', () => {
+  log('panel toggle requested');
   if (overlayMode === 'panel') return hideOverlay();
   if (Date.now() - closedByBlurAt < JUST_CLOSED_MS) return;
   openPanel();
 });
 ipcMain.on('overlay:open-panel', () => openPanel());
-ipcMain.on('overlay:close', () => hideOverlay());
+ipcMain.on('overlay:close', () => {
+  log('overlay close requested');
+  hideOverlay();
+});
 
 function bubbleVisible() {
   return Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible());
@@ -537,22 +541,53 @@ let spotlightTimer = null;
 // light, not a theme accent.
 const HALO_COLORS = { done: '#3ecf8e', question: '#e0b341', permission: '#e05561' };
 let haloActive = null;
+// Every halo decision bumps the generation; an async show that awakes to find
+// a newer generation aborts instead of resurrecting a window that a hide (or
+// a newer show) already superseded — the race left ghost rings on screen.
+let haloGeneration = 0;
 
-async function showGentleHalo(state) {
-  await spotlightWindow.webContents.executeJavaScript(
-    `document.body.classList.add('gentle');
-     document.body.style.setProperty('--ring', ${JSON.stringify(HALO_COLORS[state])});`,
-  );
-  spotlightWindow.hide();
+// The halo sits ON TOP of the bubble (override-redirect, outside the WM):
+// if its input region is not empty the bubble is unclickable. On Electron 42
+// / X11 the empty region is FLAKY across remaps — sometimes it survives a
+// hide/show, sometimes it comes back full. So the window is never remapped
+// once shown (ring visibility is pure CSS), the region is re-asserted after
+// every geometry change, and a 1s guard keeps re-asserting while rings are
+// visible — never trust the one set at creation.
+function presentHaloWindow() {
+  // macOS ghosts when a visible transparent window moves — reposition hidden
+  // there. On Linux it is the OPPOSITE: remapping is what breaks the input
+  // region, so the window moves while mapped.
+  if (process.platform === 'darwin' && spotlightWindow.isVisible()) spotlightWindow.hide();
   spotlightWindow.setBounds(spotlightBounds(bubbleAnchor, BUBBLE_BOX, SPOT_BOX));
-  spotlightWindow.showInactive();
-  // The halo sits ON TOP of the bubble (override-redirect, outside the WM):
-  // if its input region is not empty the bubble is unclickable. X11 drops the
-  // empty region somewhere in the hide/setBounds/show cycle, so it is
-  // re-asserted after every show — never trust the one set at creation.
+  if (!spotlightWindow.isVisible()) spotlightWindow.showInactive();
   spotlightWindow.setIgnoreMouseEvents(true);
   stayOnTop(spotlightWindow);
-  stayOnTop(mainWindow);
+  stayOnTop(mainWindow); // the bubble itself stays above its halo
+}
+
+function setHaloClasses(mode) {
+  const script =
+    mode === ''
+      ? `document.body.classList.remove('gentle', 'flash');`
+      : `document.body.classList.remove('gentle', 'flash');
+         document.body.classList.add(${JSON.stringify(mode)});`;
+  return spotlightWindow.webContents.executeJavaScript(script).catch(() => {});
+}
+
+setInterval(() => {
+  if (spotlightWindow && !spotlightWindow.isDestroyed() && spotlightWindow.isVisible()) {
+    spotlightWindow.setIgnoreMouseEvents(true);
+  }
+}, 1000);
+
+async function showGentleHalo(state, generation) {
+  await spotlightWindow.webContents.executeJavaScript(
+    `document.body.classList.remove('flash');
+     document.body.classList.add('gentle');
+     document.body.style.setProperty('--ring', ${JSON.stringify(HALO_COLORS[state])});`,
+  );
+  if (generation !== haloGeneration) return; // superseded while awaiting
+  presentHaloWindow();
 }
 
 // Keeps the waves in sync with the sessions: called on every registry change
@@ -566,12 +601,13 @@ function updateNotificationHalo() {
   const wanted = state && positionable ? state : null;
   if (wanted === haloActive) return; // already waving right — no show churn
   haloActive = wanted;
+  haloGeneration += 1;
   if (!spotlightWindow || spotlightWindow.isDestroyed()) return;
   if (!haloActive) {
-    spotlightWindow.hide();
+    setHaloClasses(''); // rings off; the window stays mapped (see above)
     return;
   }
-  showGentleHalo(haloActive).catch((error) => log(`halo failed: ${error}`));
+  showGentleHalo(haloActive, haloGeneration).catch((error) => log(`halo failed: ${error}`));
 }
 
 // The halo rides in its own click-through window: the bubble window is
@@ -580,26 +616,21 @@ function updateNotificationHalo() {
 async function flashSpotlight() {
   if (!spotlightWindow || spotlightWindow.isDestroyed() || !bubbleAnchor) return;
   try {
+    haloGeneration += 1; // abort any gentle show still in flight
     const accent = await mainWindow.webContents.executeJavaScript(
       "getComputedStyle(document.body).getPropertyValue('--accent')",
     );
     await spotlightWindow.webContents.executeJavaScript(
       `document.body.classList.remove('gentle');
+       document.body.classList.add('flash');
        document.body.style.setProperty('--ring', ${JSON.stringify(String(accent).trim())})`,
     );
-    // positioned while hidden — resizing/moving a visible transparent window
-    // ghosts on macOS
-    spotlightWindow.hide();
-    spotlightWindow.setBounds(spotlightBounds(bubbleAnchor, BUBBLE_BOX, SPOT_BOX));
-    spotlightWindow.showInactive();
-    spotlightWindow.setIgnoreMouseEvents(true); // see showGentleHalo
-    stayOnTop(spotlightWindow);
-    stayOnTop(mainWindow); // the bubble itself stays above its halo
+    presentHaloWindow();
     haloActive = null; // the flash wiped the gentle mode — hand-back re-shows
     clearTimeout(spotlightTimer);
     spotlightTimer = setTimeout(() => {
       spotlightTimer = null;
-      if (spotlightWindow && !spotlightWindow.isDestroyed()) spotlightWindow.hide();
+      setHaloClasses(''); // rings off, window stays mapped
       updateNotificationHalo(); // hand the window back to the waves
     }, SPOT_MS);
   } catch (error) {
@@ -1347,7 +1378,7 @@ ipcMain.handle('warp:reply', async (_event, { sessionId, text }) => {
 // the bubble; main polls the cursor, moves the window, and tells the
 // renderer when a press was really just a click.
 ipcMain.on('drag:start', () => {
-  if (spotlightWindow && !spotlightWindow.isDestroyed()) spotlightWindow.hide();
+  if (spotlightWindow && !spotlightWindow.isDestroyed()) setHaloClasses('');
   if (!canPositionWindows || !mainWindow || mainWindow.isDestroyed()) return;
   if (dragState) clearInterval(dragState.timer);
   const startCursor = screen.getCursorScreenPoint();
@@ -1373,12 +1404,15 @@ ipcMain.on('drag:end', () => {
   clearInterval(dragState.timer);
   const wasDragged = dragState.moved;
   dragState = null;
-  haloActive = null; // force a re-show at the new spot
-  updateNotificationHalo(); // the waves follow the bubble
   if (!wasDragged) {
+    // A click does not move the bubble, so the halo needs nothing — touching
+    // it here raced the panel opening. The breadcrumb makes 'the bubble is
+    // dead' reports diagnosable from the log.
+    log('bubble click');
     sendToRenderer('ui:click');
     return;
   }
+  haloActive = null; // force a re-show at the new spot
   const [x, y] = mainWindow.getPosition();
   const center = { x: x + BUBBLE_BOX / 2, y: y + BUBBLE_BOX / 2 };
   const workArea = screen.getDisplayNearestPoint(center).workArea;
@@ -1391,6 +1425,9 @@ ipcMain.on('drag:end', () => {
   persistAnchor();
   // Moving across displays can drop the window behind others.
   stayOnTop(mainWindow);
+  // Only AFTER the anchor above is final: re-showing first left the rings
+  // waving at the OLD spot — a blinking decoy the user then clicks on.
+  updateNotificationHalo();
   if (overlayMode) showOverlay(overlayMode, { focus: overlayMode === 'panel' });
 });
 
