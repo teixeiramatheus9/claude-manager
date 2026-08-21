@@ -485,16 +485,47 @@ function applyBounds(win, bounds) {
   }
 }
 
-// Windows cross-fades a window in on show(), and on a transparent window the
-// half-blended frames read as a blink (frame capture shows the desktop
-// bleeding through the panel). Forcing the layered alpha through 0 and back
-// in the same tick makes DWM drop that transition — the window pops in whole.
-function showWithoutFlash(win, { focus = false } = {}) {
-  const wasHidden = !win.isVisible();
-  if (wasHidden) win.setOpacity(0);
-  if (focus) win.show();
-  else win.showInactive();
-  if (wasHidden) win.setOpacity(1);
+// Windows plays a ~200ms cloak fade every time a hidden window is shown
+// again, and on a transparent window nothing cancels it — frame captures
+// show the desktop bleeding through the panel while it runs, which reads as
+// a blink. So wherever windows can be positioned, "closed" overlay windows
+// are never hidden: they park far offscreen, transparent and click-through,
+// and opening is an atomic move back. Born parked, the one real show() (and
+// its fade) plays offscreen at boot. Wayland keeps plain hide/show — no
+// positioning there, and no such fade either.
+const PARK = { x: -32000, y: -32000 };
+
+function parkWindow(win) {
+  if (!win || win.isDestroyed()) return;
+  if (!canPositionWindows) return win.hide();
+  win.setOpacity(0);
+  win.setIgnoreMouseEvents(true);
+  const { width, height } = win.getBounds();
+  win.setBounds({ x: PARK.x, y: PARK.y, width, height });
+  win.blur();
+}
+
+function unparkWindow(win, { focus = false } = {}) {
+  if (!canPositionWindows) {
+    if (focus) win.show();
+    else win.showInactive();
+    return;
+  }
+  win.setIgnoreMouseEvents(false);
+  win.setOpacity(1);
+  if (!win.isVisible()) {
+    // Only when born-parked could not run (window died and came back).
+    if (focus) win.show();
+    else win.showInactive();
+  } else if (focus) {
+    win.focus();
+  }
+}
+
+function bornParked(win) {
+  if (!canPositionWindows) return;
+  parkWindow(win);
+  win.showInactive();
 }
 
 function showOverlay(mode, { focus = false } = {}) {
@@ -503,7 +534,7 @@ function showOverlay(mode, { focus = false } = {}) {
   applyZoom(overlayWindow, mode === 'panel' ? panelScale() : 1);
   applyBounds(overlayWindow, overlayBounds(mode));
   overlayWindow.webContents.send('overlay:mode', mode);
-  showWithoutFlash(overlayWindow, { focus });
+  unparkWindow(overlayWindow, { focus });
   // Re-asserting an already-set topmost flag still round-trips through
   // SetWindowPos and can blink the window — only touch it when it dropped.
   if (!overlayWindow.isAlwaysOnTop()) overlayWindow.setAlwaysOnTop(true, 'screen-saver');
@@ -512,7 +543,7 @@ function showOverlay(mode, { focus = false } = {}) {
 function hideOverlay() {
   clearTimeout(tooltipTimer);
   overlayMode = null;
-  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+  parkWindow(overlayWindow);
 }
 
 function openPanel() {
@@ -554,8 +585,12 @@ const SETTINGS_SIZE = { width: 640, height: 480 };
 const SETTINGS_ZOOM = 1.2;
 let settingsOpenedAt = 0;
 
+// Logical state, not isVisible(): a parked window still counts as visible
+// to the OS.
+let settingsShown = false;
+
 function settingsVisible() {
-  return Boolean(settingsWindow && !settingsWindow.isDestroyed() && settingsWindow.isVisible());
+  return Boolean(settingsWindow && !settingsWindow.isDestroyed() && settingsShown);
 }
 
 function settingsBounds() {
@@ -582,7 +617,8 @@ function openSettingsWindow() {
     if (settingsVisible()) resizeSettingsInPlace();
     else applyBounds(settingsWindow, settingsBounds());
   }
-  showWithoutFlash(settingsWindow, { focus: true });
+  settingsShown = true;
+  unparkWindow(settingsWindow, { focus: true });
   if (!settingsWindow.isAlwaysOnTop()) settingsWindow.setAlwaysOnTop(true, 'screen-saver');
 }
 
@@ -600,7 +636,8 @@ function resizeSettingsInPlace() {
 
 function closeSettingsWindow({ refocusPanel = false } = {}) {
   if (!settingsVisible()) return;
-  settingsWindow.hide();
+  settingsShown = false;
+  parkWindow(settingsWindow);
   // Hand focus back to the panel when it is still up, so its own blur cycle
   // re-arms — otherwise the next outside click would have no blur to fire.
   if (refocusPanel && overlayMode === 'panel' && overlayWindow && !overlayWindow.isDestroyed()) {
@@ -954,6 +991,7 @@ function createWindows() {
     sendToRenderer('ui:env', { managed: canPositionWindows });
     sendState();
   });
+  bornParked(overlayWindow);
 
   settingsWindow = new BrowserWindow({
     ...windowOptions,
@@ -975,6 +1013,7 @@ function createWindows() {
     sendToRenderer('ui:env', { managed: canPositionWindows });
     sendState();
   });
+  bornParked(settingsWindow);
 
   // Focus bounces back to the bubble window right after a click, so a bare
   // blur is not enough: the panel only closes when no window of ours is
