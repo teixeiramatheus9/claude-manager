@@ -1393,7 +1393,6 @@ ipcMain.on('drag:end', () => {
     return;
   }
   haloActive = null; // force a re-show at the new spot
-  updateNotificationHalo(); // the waves follow the bubble
   const [x, y] = mainWindow.getPosition();
   const center = { x: x + BUBBLE_BOX / 2, y: y + BUBBLE_BOX / 2 };
   const workArea = screen.getDisplayNearestPoint(center).workArea;
@@ -1406,6 +1405,9 @@ ipcMain.on('drag:end', () => {
   persistAnchor();
   // Moving across displays can drop the window behind others.
   stayOnTop(mainWindow);
+  // Only AFTER the anchor above is final: re-showing first left the rings
+  // waving at the OLD spot — a blinking decoy the user then clicks on.
+  updateNotificationHalo();
   if (overlayMode) showOverlay(overlayMode, { focus: overlayMode === 'panel' });
 });
 
