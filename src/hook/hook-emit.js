@@ -72,6 +72,8 @@ process.stdin.on('end', () => {
     'KITTY_LISTEN_ON',
     'WEZTERM_PANE',
     'WEZTERM_UNIX_SOCKET',
+    'GNOME_TERMINAL_SCREEN',
+    'GNOME_TERMINAL_SERVICE',
     'TMUX',
     'TMUX_PANE',
     'WT_SESSION',
