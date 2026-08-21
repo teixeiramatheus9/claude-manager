@@ -981,29 +981,26 @@ window.manager.onTooltip(({ projectName, text, kind, optionsCount }) => {
   tooltipText.textContent = text;
 });
 
-// Inline nickname editor (issue #63): swaps the folder line for an input;
+// Inline nickname editor (issue #63): swaps the tab name for an input;
 // Enter saves (empty clears the nickname), Esc walks away.
 function startRename(container, session) {
+  const previous = [...container.childNodes];
   const input = document.createElement('input');
   input.className = 'rename-input';
   input.value = session.alias ?? '';
   input.placeholder = session.projectName;
   input.maxLength = 60;
-  container.replaceChildren('└ ', input);
+  container.replaceChildren(input);
   input.focus();
   input.select();
   let finished = false;
   const finish = (save) => {
     if (finished) return; // Enter also blurs — send once
     finished = true;
-    if (save) {
-      window.manager.renameSession(session.id, input.value);
-    } else {
-      const hasAlias = session.displayName && session.displayName !== session.projectName;
-      container.replaceChildren(
-        hasAlias ? `└ ${session.displayName} (${session.projectName})` : `└ ${session.projectName}`,
-      );
-    }
+    // Saving re-renders the list off the state event; walking away just
+    // puts the original nodes back (the arcade rank span included).
+    if (save) window.manager.renameSession(session.id, input.value);
+    else container.replaceChildren(...previous);
   };
   input.addEventListener('click', (event) => event.stopPropagation());
   input.addEventListener('keydown', (event) => {
@@ -1151,18 +1148,30 @@ function sessionElement(session, index) {
   dot.className = `dot ${state}`;
   const name = document.createElement('span');
   name.className = 'name';
-  // "Tema" do chat: título gerado pela IA > primeiro prompt > pasta.
-  // No arcade cada chat é um jogador: 1up, 2up, 3up… — em amarelo de placar.
-  const title = session.title ?? session.promptPreview ?? session.projectName;
+  // The tab's own name (nickname > folder) leads the card, pencil beside it;
+  // the AI title lives on the └ line below. No arcade cada chat é um
+  // jogador: 1up, 2up, 3up… — em amarelo de placar.
+  const hasAlias = session.displayName && session.displayName !== session.projectName;
+  const tabName = hasAlias
+    ? `${session.displayName} (${session.projectName})`
+    : session.projectName;
   if (arcadeSkin) {
     const player = document.createElement('span');
     // Rank colours cycle out after 2UP, like the spec's hi-score board.
     player.className = `player${index < 2 ? ` player-${index + 1}` : ''}`;
     player.textContent = `${index + 1}up `;
-    name.append(player, document.createTextNode(title));
+    name.append(player, document.createTextNode(tabName));
   } else {
-    name.textContent = title;
+    name.textContent = tabName;
   }
+  const rename = document.createElement('button');
+  rename.className = 'session-rename';
+  rename.textContent = '✎';
+  rename.title = 'Renomear este chat';
+  rename.addEventListener('click', (event) => {
+    event.stopPropagation();
+    startRename(name, session);
+  });
   const time = document.createElement('span');
   time.className = 'time';
   const statusLabels = arcadeSkin ? STATUS_LABEL_ARCADE : STATUS_LABEL;
@@ -1183,25 +1192,18 @@ function sessionElement(session, index) {
     event.stopPropagation();
     window.manager.removeSession(session.id);
   });
-  top.append(dot, name, time, mirror, close);
+  top.append(dot, name, rename, time, mirror, close);
   card.append(top);
 
-  const project = document.createElement('div');
-  project.className = 'title';
-  const hasAlias = session.displayName && session.displayName !== session.projectName;
-  project.textContent = hasAlias
-    ? `└ ${session.displayName} (${session.projectName})`
-    : `└ ${session.projectName}`;
-  const rename = document.createElement('button');
-  rename.className = 'session-rename';
-  rename.textContent = '✎';
-  rename.title = 'Renomear este chat';
-  rename.addEventListener('click', (event) => {
-    event.stopPropagation();
-    startRename(project, session);
-  });
-  project.append(' ', rename);
-  card.append(project);
+  // "Tema" do chat na linha de baixo: título gerado pela IA > primeiro
+  // prompt. Sem nenhum dos dois a linha some — o nome da guia já está acima.
+  const aiTitle = session.title ?? session.promptPreview;
+  if (aiTitle) {
+    const subtitle = document.createElement('div');
+    subtitle.className = 'title';
+    subtitle.textContent = `└ ${aiTitle}`;
+    card.append(subtitle);
+  }
 
   // One message balloon per chat — the exact text that went out in the
   // tooltip. A pending question adds its options as compact chips INSIDE

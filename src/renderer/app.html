@@ -357,6 +357,12 @@
       body[data-theme='arcade'] #header-path {
         font-size: 9px;
       }
+      body[data-theme='arcade'] .session .name {
+        font-size: 10.5px;
+      }
+      body[data-theme='arcade'] .session-rename {
+        font-size: 11px;
+      }
       body[data-theme='arcade'] .session .time,
       body[data-theme='arcade'] .session .title,
       body[data-theme='arcade'] .reply-feedback,
@@ -824,6 +830,8 @@
       .session .name {
         flex: 1;
         min-width: 0;
+        /* The tab name is the card's headline — a touch above the base size. */
+        font-size: 13px;
         font-weight: 600;
         color: var(--text);
         overflow: hidden;
@@ -855,6 +863,11 @@
       .session-rename:hover,
       #mirror-rename:hover {
         opacity: 1;
+      }
+      /* The pencil sits on the headline now — a notch bigger and less shy. */
+      .session-rename {
+        font-size: 13px;
+        opacity: 0.65;
       }
       .rename-input {
         font: inherit;
