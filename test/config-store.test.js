@@ -15,6 +15,15 @@ describe('config store', () => {
     expect(loadConfig(path.join(dir, 'config.json')).crt).toBe(false);
   });
 
+  it('migrates a pre-skin colour theme into theme + palette', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-config-'));
+    const file = path.join(dir, 'config.json');
+    saveConfig(file, { theme: 'magenta' });
+    const config = loadConfig(file);
+    expect(config.theme).toBe('classico');
+    expect(config.palette).toBe('magenta');
+  });
+
   it('round-trips and merges defaults for missing keys', async () => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'cm-config-'));
     const file = path.join(dir, 'config.json');
