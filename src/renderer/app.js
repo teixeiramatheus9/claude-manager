@@ -9,15 +9,14 @@ const sessionsContainer = document.getElementById('sessions');
 const bubble = document.getElementById('bubble');
 const headerPath = document.getElementById('header-path');
 
-const PATHS = { sessions: '~/.claude/sessions', chat: '~/.claude/chats', config: '~/.claude/config' };
+const PATHS = { sessions: '~/.claude/sessions', chat: '~/.claude/chats' };
 
 function renderHeaderPath() {
   if (mirrorSession) {
     headerPath.textContent = `~/.claude/sessions/${mirrorSession.displayName ?? mirrorSession.projectName}`;
     return;
   }
-  const view = chatOpen ? 'chat' : settingsPop.classList.contains('hidden') ? 'sessions' : 'config';
-  headerPath.textContent = PATHS[view];
+  headerPath.textContent = PATHS[chatOpen ? 'chat' : 'sessions'];
 }
 
 // One HTML, two windows: the bubble window never resizes, the overlay window
@@ -34,6 +33,14 @@ const STATUS_LABEL = {
   done: 'concluído',
   waiting: 'esperando você',
   question: 'pergunta',
+};
+
+// Fliperama wording for the arcade skin — same states, another language.
+const STATUS_LABEL_ARCADE = {
+  working: '▶ play',
+  done: 'game over',
+  waiting: 'continue?',
+  question: 'continue?',
 };
 
 window.manager.onOverlayMode((mode) => {
@@ -168,7 +175,6 @@ function setChatOpen(open) {
   chatOpen = open;
   chatView.classList.toggle('hidden', !open);
   sessionsContainer.classList.toggle('hidden', open);
-  settingsPop.classList.add('hidden');
   if (!open) sessionsContainer.classList.remove('hidden');
   if (open) {
     renderChatEmptyState();
@@ -254,7 +260,6 @@ function setMirrorOpen(session) {
   mirrorView.classList.toggle('hidden', !open);
   sessionsContainer.classList.toggle('hidden', open);
   if (open) {
-    settingsPop.classList.add('hidden');
     mirrorTitle.textContent =
       session.title ?? session.promptPreview ?? session.displayName ?? session.projectName;
     mirrorRename.onclick = () => {
@@ -367,26 +372,40 @@ let typeVolumes = { ...DEFAULT_TYPE_VOLUMES };
 let ttsEnabled = false;
 
 const settingsButton = document.getElementById('settings');
-const settingsPop = document.getElementById('settings-pop');
 const volumeInput = document.getElementById('volume');
 const voiceVolumeInput = document.getElementById('voice-volume');
 const timbreSelect = document.getElementById('timbre');
 
-// One view at a time: the list, the config or the manager chat.
-function setSettingsOpen(open) {
-  if (open) {
-    setChatOpen(false);
-    setMirrorOpen(null);
-    refreshBridgeSection();
-  }
-  settingsPop.classList.toggle('hidden', !open);
-  sessionsContainer.classList.toggle('hidden', open);
-  renderHeaderPath();
+// The settings live in their own window now — the button and the tray menu
+// both land there through the main process.
+settingsButton.addEventListener('click', () => window.manager.openSettings());
+
+document
+  .getElementById('settings-close')
+  .addEventListener('click', () => window.manager.closeSettings());
+if (view === 'settings') {
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') window.manager.closeSettings();
+  });
 }
 
-settingsButton.addEventListener('click', () => {
-  setSettingsOpen(settingsPop.classList.contains('hidden'));
-});
+// Sidebar: one section on screen at a time.
+const settingsContent = document.getElementById('settings-content');
+const settingsNavItems = [...document.querySelectorAll('#settings-nav .nav-item')];
+const settingsSections = [...document.querySelectorAll('.settings-section')];
+
+function showSettingsSection(id) {
+  for (const item of settingsNavItems) item.classList.toggle('active', item.dataset.section === id);
+  for (const section of settingsSections) {
+    section.classList.toggle('active', section.dataset.section === id);
+  }
+  settingsContent.scrollTop = 0;
+}
+
+for (const item of settingsNavItems) {
+  item.addEventListener('click', () => showSettingsSection(item.dataset.section));
+}
+showSettingsSection('som');
 
 // --- GNOME bridge (Wayland only): install/uninstall the shell extension ---
 const bridgeSection = document.getElementById('bridge-section');
@@ -430,8 +449,10 @@ bridgeUninstallButton.addEventListener('click', async () => {
   await refreshBridgeSection();
 });
 
-// "Configurações" in the tray menu lands straight here.
-window.manager.onOpenSettings(() => setSettingsOpen(true));
+// The settings window carries the section now; probe once at startup so it
+// arrives painted (the buttons re-probe after every action).
+refreshBridgeSection();
+
 window.manager.onOpenChat(() => {
   setChatOpen(true);
   renderHeaderPath();
@@ -497,7 +518,7 @@ function renderSlider(slider) {
   if (label) label.textContent = `${slider.value}%`;
 }
 
-for (const slider of document.querySelectorAll('#settings-pop input[type="range"]')) {
+for (const slider of document.querySelectorAll('#settings-window input[type="range"]')) {
   renderSlider(slider);
   slider.addEventListener('input', () => renderSlider(slider));
 }
@@ -557,7 +578,7 @@ document.addEventListener('click', () => {
 
 // The menu is positioned against the viewport, so scrolling would leave it
 // floating away from its trigger.
-document.getElementById('settings-pop').addEventListener('scroll', () => {
+settingsContent.addEventListener('scroll', () => {
   for (const dropdown of dropdowns) dropdown.close();
 });
 
@@ -625,12 +646,29 @@ updateCheckButton.addEventListener('click', async () => {
 const terminalSelect = document.getElementById('terminal');
 const voiceSelect = document.getElementById('voice');
 const themeSelect = document.getElementById('theme');
+const paletteSelect = document.getElementById('palette');
 const panelScaleInput = document.getElementById('panel-scale');
 
-// Both windows read the theme off the shared state, so switching it in the
-// panel repaints the bubble at the same time.
-function applyTheme(theme) {
+// Every window reads theme + palette off the shared state, so switching them
+// in the settings repaints the bubble and the panel at the same time. The
+// theme is the skin (classico/arcade); the palette only colours the classic.
+let arcadeSkin = false;
+function applyTheme(theme, palette) {
   if (theme) document.body.dataset.theme = theme;
+  if (palette) document.body.dataset.palette = palette;
+  arcadeSkin = document.body.dataset.theme === 'arcade';
+  // The cabinet speaks its own dialect — short marquee titles, hotkey-style
+  // test buttons. CSS handles colours; the words swap here.
+  document.querySelector('#panel header h1').textContent = arcadeSkin ? 'vizor' : 'vzr';
+  document.querySelector('#settings-window header h1').textContent = arcadeSkin
+    ? 'config'
+    : 'configurações';
+  document.getElementById('sound-test').textContent = arcadeSkin
+    ? '[s]testar som'
+    : '[testar som]';
+  document.getElementById('voice-test').textContent = arcadeSkin
+    ? '[v]testar voz'
+    : '[testar voz]';
 }
 
 // The tube is orthogonal to the palette: it rides over whichever theme is on.
@@ -789,7 +827,13 @@ window.manager.getConfig().then((config) => {
     );
   }
   themeSelect.value = config.theme;
-  applyTheme(config.theme);
+  if (Array.isArray(config.palettes) && config.palettes.length) {
+    paletteSelect.replaceChildren(
+      ...config.palettes.map(({ value, label }) => new Option(label, value)),
+    );
+  }
+  paletteSelect.value = config.palette;
+  applyTheme(config.theme, config.palette);
   applyCrt(config.crt);
   const range = config.panelScaleRange;
   if (range) {
@@ -818,8 +862,13 @@ panelScaleInput.addEventListener('change', () => {
 });
 
 themeSelect.addEventListener('change', () => {
-  applyTheme(themeSelect.value);
+  applyTheme(themeSelect.value, paletteSelect.value);
   window.manager.setConfig({ theme: themeSelect.value });
+});
+
+paletteSelect.addEventListener('change', () => {
+  applyTheme(themeSelect.value, paletteSelect.value);
+  window.manager.setConfig({ palette: paletteSelect.value });
 });
 
 budgetInput.addEventListener('input', () => renderBudgetLabel(Number(budgetInput.value)));
@@ -835,8 +884,11 @@ function renderUsage(tokens) {
   if (!tokens) return;
   const used = formatTokens(tokens.usedToday);
   const budget = formatTokens(tokens.budget);
+  // Arcade counts credits, like any cabinet worth its coin slot.
   usageLine.textContent =
-    tokens.budget <= 0 ? 'ia desligada' : `tokens ${used}/${budget}${tokens.economy ? ' · eco' : ''}`;
+    tokens.budget <= 0
+      ? 'ia desligada'
+      : `${arcadeSkin ? 'credit' : 'tokens'} ${used}/${budget}${tokens.economy ? ' · eco' : ''}`;
   usageDetail.textContent =
     tokens.budget <= 0
       ? '# ia desligada por escolha sua — só frases prontas'
@@ -929,29 +981,26 @@ window.manager.onTooltip(({ projectName, text, kind, optionsCount }) => {
   tooltipText.textContent = text;
 });
 
-// Inline nickname editor (issue #63): swaps the folder line for an input;
+// Inline nickname editor (issue #63): swaps the tab name for an input;
 // Enter saves (empty clears the nickname), Esc walks away.
 function startRename(container, session) {
+  const previous = [...container.childNodes];
   const input = document.createElement('input');
   input.className = 'rename-input';
   input.value = session.alias ?? '';
   input.placeholder = session.projectName;
   input.maxLength = 60;
-  container.replaceChildren('└ ', input);
+  container.replaceChildren(input);
   input.focus();
   input.select();
   let finished = false;
   const finish = (save) => {
     if (finished) return; // Enter also blurs — send once
     finished = true;
-    if (save) {
-      window.manager.renameSession(session.id, input.value);
-    } else {
-      const hasAlias = session.displayName && session.displayName !== session.projectName;
-      container.replaceChildren(
-        hasAlias ? `└ ${session.displayName} (${session.projectName})` : `└ ${session.projectName}`,
-      );
-    }
+    // Saving re-renders the list off the state event; walking away just
+    // puts the original nodes back (the arcade rank span included).
+    if (save) window.manager.renameSession(session.id, input.value);
+    else container.replaceChildren(...previous);
   };
   input.addEventListener('click', (event) => event.stopPropagation());
   input.addEventListener('keydown', (event) => {
@@ -1086,7 +1135,7 @@ function emptyStateElement() {
   return empty;
 }
 
-function sessionElement(session) {
+function sessionElement(session, index) {
   const state = session.question ? 'question' : session.status;
   const card = document.createElement('div');
   card.className = `session ${state}${session.unread ? ' unread' : ''}`;
@@ -1099,11 +1148,34 @@ function sessionElement(session) {
   dot.className = `dot ${state}`;
   const name = document.createElement('span');
   name.className = 'name';
-  // "Tema" do chat: título gerado pela IA > primeiro prompt > pasta.
-  name.textContent = session.title ?? session.promptPreview ?? session.projectName;
+  // The tab's own name (nickname > folder) leads the card, pencil beside it;
+  // the AI title lives on the └ line below. No arcade cada chat é um
+  // jogador: 1up, 2up, 3up… — em amarelo de placar.
+  const hasAlias = session.displayName && session.displayName !== session.projectName;
+  const tabName = hasAlias
+    ? `${session.displayName} (${session.projectName})`
+    : session.projectName;
+  if (arcadeSkin) {
+    const player = document.createElement('span');
+    // Rank colours cycle out after 2UP, like the spec's hi-score board.
+    player.className = `player${index < 2 ? ` player-${index + 1}` : ''}`;
+    player.textContent = `${index + 1}up `;
+    name.append(player, document.createTextNode(tabName));
+  } else {
+    name.textContent = tabName;
+  }
+  const rename = document.createElement('button');
+  rename.className = 'session-rename';
+  rename.textContent = '✎';
+  rename.title = 'Renomear este chat';
+  rename.addEventListener('click', (event) => {
+    event.stopPropagation();
+    startRename(name, session);
+  });
   const time = document.createElement('span');
   time.className = 'time';
-  time.textContent = `${STATUS_LABEL[state] ?? state} ${relativeTime(session.updatedAt)}`;
+  const statusLabels = arcadeSkin ? STATUS_LABEL_ARCADE : STATUS_LABEL;
+  time.textContent = `${statusLabels[state] ?? state} ${relativeTime(session.updatedAt)}`;
   const mirror = document.createElement('button');
   mirror.className = 'session-mirror';
   mirror.textContent = '≡';
@@ -1120,25 +1192,18 @@ function sessionElement(session) {
     event.stopPropagation();
     window.manager.removeSession(session.id);
   });
-  top.append(dot, name, time, mirror, close);
+  top.append(dot, name, rename, time, mirror, close);
   card.append(top);
 
-  const project = document.createElement('div');
-  project.className = 'title';
-  const hasAlias = session.displayName && session.displayName !== session.projectName;
-  project.textContent = hasAlias
-    ? `└ ${session.displayName} (${session.projectName})`
-    : `└ ${session.projectName}`;
-  const rename = document.createElement('button');
-  rename.className = 'session-rename';
-  rename.textContent = '✎';
-  rename.title = 'Renomear este chat';
-  rename.addEventListener('click', (event) => {
-    event.stopPropagation();
-    startRename(project, session);
-  });
-  project.append(' ', rename);
-  card.append(project);
+  // "Tema" do chat na linha de baixo: título gerado pela IA > primeiro
+  // prompt. Sem nenhum dos dois a linha some — o nome da guia já está acima.
+  const aiTitle = session.title ?? session.promptPreview;
+  if (aiTitle) {
+    const subtitle = document.createElement('div');
+    subtitle.className = 'title';
+    subtitle.textContent = `└ ${aiTitle}`;
+    card.append(subtitle);
+  }
 
   // One message balloon per chat — the exact text that went out in the
   // tooltip. A pending question adds its options as compact chips INSIDE
@@ -1314,7 +1379,7 @@ function applySound(sound) {
 }
 
 window.manager.onState((state) => {
-  applyTheme(state.theme);
+  applyTheme(state.theme, state.palette);
   applyCrt(state.crt);
   applyShortcuts(state.shortcuts);
   applyAutostart(state.autostart);
@@ -1335,8 +1400,8 @@ window.manager.onState((state) => {
     sessionsContainer.append(emptyStateElement());
     return;
   }
-  for (const session of state.sessions) {
-    sessionsContainer.append(sessionElement(session));
-  }
+  state.sessions.forEach((session, index) => {
+    sessionsContainer.append(sessionElement(session, index));
+  });
   sessionsContainer.append(rescanElement());
 });

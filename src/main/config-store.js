@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULT_VOICE } from './sherpa-installer.js';
-import { DEFAULT_THEME } from './themes.js';
+import { DEFAULT_THEME, DEFAULT_PALETTE, migrateThemeConfig } from './themes.js';
 import { PANEL_SCALE } from './panel-size.js';
 import { DEFAULT_SHORTCUTS } from './shortcuts.js';
 
@@ -9,6 +9,7 @@ export const DEFAULT_CONFIG = {
   terminal: 'auto',
   voice: DEFAULT_VOICE,
   theme: DEFAULT_THEME,
+  palette: DEFAULT_PALETTE,
   crt: false,
   panelScale: PANEL_SCALE.default,
   muted: false,
@@ -27,7 +28,7 @@ export const DEFAULT_CONFIG = {
 
 export function loadConfig(file) {
   try {
-    return { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(file, 'utf8')) };
+    return migrateThemeConfig({ ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(file, 'utf8')) });
   } catch {
     return { ...DEFAULT_CONFIG };
   }

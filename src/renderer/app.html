@@ -21,6 +21,19 @@
         font-display: swap;
         src: url('fonts/ibm-plex-mono-600.woff2') format('woff2');
       }
+      /* Arcade skin only. OFL licensed — see fonts/silkscreen-OFL.txt. */
+      @font-face {
+        font-family: 'Silkscreen';
+        font-weight: 400;
+        font-display: swap;
+        src: url('fonts/silkscreen-400.ttf') format('truetype');
+      }
+      @font-face {
+        font-family: 'Silkscreen';
+        font-weight: 700;
+        font-display: swap;
+        src: url('fonts/silkscreen-700.ttf') format('truetype');
+      }
 
       :root {
         --bg-surface: #0d1117;
@@ -39,7 +52,7 @@
         --knob: #e6edf3;
       }
 
-      body[data-theme='ambar'] {
+      body[data-palette='ambar'] {
         --bg-surface: #13100b;
         --bg-header: #18140e;
         --bg-footer: #100d09;
@@ -55,7 +68,7 @@
         --accent: #f4b765;
         --warn: #d45d52;
       }
-      body[data-theme='magenta'] {
+      body[data-palette='magenta'] {
         --bg-surface: #140f17;
         --bg-header: #19131d;
         --bg-footer: #110d13;
@@ -71,7 +84,7 @@
         --accent: #e279c4;
         --warn: #ca9c3e;
       }
-      body[data-theme='ciano'] {
+      body[data-palette='ciano'] {
         --bg-surface: #0d1416;
         --bg-header: #10191c;
         --bg-footer: #0b1112;
@@ -87,7 +100,7 @@
         --accent: #7fd2db;
         --warn: #ca9c3e;
       }
-      body[data-theme='mono'] {
+      body[data-palette='mono'] {
         --bg-surface: #111213;
         --bg-header: #151617;
         --bg-footer: #0e0f10;
@@ -107,7 +120,7 @@
       /* Giz: the light twin of monocromo — chalk on warm paper, greys only,
          amber as the single colour. Ink (--accent) plays the role the bright
          white plays on mono: same token, inverted lightness. */
-      body[data-theme='giz'] {
+      body[data-palette='giz'] {
         --bg-surface: #f7f5f1;
         --bg-header: #efede8;
         --bg-footer: #f1efea;
@@ -124,7 +137,7 @@
         --warn: #b8860b;
       }
 
-      body[data-theme='magma'] {
+      body[data-palette='magma'] {
         --bg-surface: #110b0b;
         --bg-header: #150e0e;
         --bg-footer: #0e0909;
@@ -140,7 +153,7 @@
         --accent: #ed726e;
         --warn: #ca9c3e;
       }
-      body[data-theme='matrix'] {
+      body[data-palette='matrix'] {
         --bg-surface: #0b110d;
         --bg-header: #0e1510;
         --bg-footer: #090e0b;
@@ -158,7 +171,7 @@
       }
       /* Phosphor reads right only when the text is brighter than the accent —
          on a real tube the glow is the lit dot, not the highlight colour. */
-      body[data-theme='pipboy'] {
+      body[data-palette='pipboy'] {
         --bg-surface: #071008;
         --bg-header: #0a1710;
         --bg-footer: #050d07;
@@ -173,6 +186,245 @@
         --knob: #b6ffc9;
         --accent: #3fff6a;
         --warn: #ffb642;
+      }
+
+      /* --- arcade: the whole app in fliperama language ---------------------
+         A skin, not a palette: fixed look per docs/vizor-arcade-handoff spec
+         (the colour picker only exists on the classic skin — its row hides
+         below). This block sits AFTER the palette blocks so the skin wins the
+         specificity tie over any palette value still stored in config. */
+      body[data-theme='arcade'] {
+        --bg-surface: #050505;
+        --bg-header: #070d12;
+        --bg-footer: #070d12;
+        --border: #35e0ff;
+        --hairline: #14202a;
+        --track: #14202a;
+        --text: #eaeaea;
+        --text-2: #9aa5ae;
+        --text-3: #5a6672;
+        --muted: #5a6672;
+        --dim: #4a4a52;
+        /* Cabinet colour split: cyan chrome/links, yellow marquee + knobs,
+           magenta hard shadow + section comments, green action verbs. */
+        --knob: #ffe14d;
+        --accent: #35e0ff;
+        --warn: #ffe14d;
+        --section: #ff4da6;
+        --action: #57ff7a;
+        font-family: 'Silkscreen', 'IBM Plex Mono', ui-monospace, monospace;
+        /* Spec type scale: titles 12, body 10, secondary 9, micro 8.5 — the
+           pixel font is drawn for these; the classic sizes read inflated. */
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+      /* Window chrome: near-black, 2px cyan frame, neon glow (the outer half
+         clips at the window edge; the inset half carries it). The spec's
+         scanlines came out too loud over real text — dropped; the crt toggle
+         still offers them for whoever wants the full tube. */
+      body[data-theme='arcade'] #panel,
+      body[data-theme='arcade'] #tooltip,
+      body[data-theme='arcade'] #settings-window {
+        border-width: 2px;
+        border-radius: 0;
+        box-shadow:
+          0 0 14px rgba(53, 224, 255, 0.35),
+          inset 0 0 24px rgba(53, 224, 255, 0.08);
+      }
+      body[data-theme='arcade'] #panel header,
+      body[data-theme='arcade'] #settings-window header {
+        background: transparent;
+        border-bottom: 2px solid var(--border);
+      }
+      /* Marquee title: yellow with the hard magenta shadow, yellow logo. */
+      body[data-theme='arcade'] #panel header h1,
+      body[data-theme='arcade'] #settings-window header h1 {
+        color: var(--warn);
+        font-size: 12px;
+        text-shadow: 2px 2px 0 var(--section);
+      }
+      body[data-theme='arcade'] #panel header svg,
+      body[data-theme='arcade'] #settings-window header svg {
+        color: var(--warn);
+      }
+      body[data-theme='arcade'] .dd-menu {
+        border-radius: 0;
+      }
+      body[data-theme='arcade'] .dd-trigger:hover {
+        color: var(--warn);
+      }
+      /* The mockup boxes the whole message balloon, not just its left edge. */
+      body[data-theme='arcade'] .message {
+        border: 1px solid var(--hairline);
+        border-left: 2px solid var(--track);
+        border-radius: 0;
+        padding: 6px 8px;
+      }
+      /* Inset only: the bubble window is exactly bubble-sized, an outer glow
+         would clip into a square halo. */
+      body[data-theme='arcade'] #bubble {
+        background: #0a0a0e;
+        border: 2px solid var(--accent);
+        box-shadow: inset 0 0 12px rgba(53, 224, 255, 0.35);
+      }
+      body[data-theme='arcade'] .setting-subtitle {
+        color: var(--section);
+      }
+      /* Sliders: fat #14202A rail, cyan fill, square 10px yellow knob (the
+         knob colour comes from --knob), cyan value. */
+      body[data-theme='arcade'] input[type='range']::-webkit-slider-runnable-track {
+        height: 6px;
+      }
+      body[data-theme='arcade'] input[type='range']::-webkit-slider-thumb {
+        width: 10px;
+        height: 10px;
+        margin-top: -2px;
+      }
+      body[data-theme='arcade'] .slider-value {
+        color: var(--accent);
+      }
+      /* Sidebar: 170px, active item yellow on a faint yellow bed, hover cyan. */
+      body[data-theme='arcade'] #settings-nav {
+        width: 170px;
+        background: transparent;
+        border-right: 1px solid var(--hairline);
+      }
+      body[data-theme='arcade'] .nav-item:hover {
+        color: var(--accent);
+        background: transparent;
+      }
+      body[data-theme='arcade'] .nav-item.active {
+        color: var(--warn);
+        background: rgba(255, 225, 77, 0.07);
+      }
+      body[data-theme='arcade'] .nav-item.active::before {
+        color: var(--warn);
+      }
+      /* Action verbs go green, and light up yellow under the cursor. */
+      body[data-theme='arcade'] .setting-actions button,
+      body[data-theme='arcade'] #panel-footer button {
+        color: var(--action);
+      }
+      body[data-theme='arcade'] .setting-actions button:hover,
+      body[data-theme='arcade'] #panel-footer button:hover {
+        color: var(--warn);
+      }
+      body[data-theme='arcade'] #usage-line {
+        color: var(--text);
+      }
+      body[data-theme='arcade'] #toast-mark {
+        color: var(--action);
+      }
+      /* Squares, not dots; ranks wear player colours (1UP cyan, 2UP magenta,
+         3UP+ off-grey); ▶ pulses, CONTINUE? blinks, GAME OVER goes grey. */
+      body[data-theme='arcade'] .dot {
+        border-radius: 0;
+      }
+      body[data-theme='arcade'] .player {
+        color: var(--dim);
+      }
+      body[data-theme='arcade'] .player-1 {
+        color: var(--accent);
+      }
+      body[data-theme='arcade'] .player-2 {
+        color: var(--section);
+      }
+      body[data-theme='arcade'] .session.working .time {
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      body[data-theme='arcade'] .session.waiting .time,
+      body[data-theme='arcade'] .session.question .time {
+        animation: blink 1.1s steps(1, end) infinite;
+      }
+      body[data-theme='arcade'] .session.done .name,
+      body[data-theme='arcade'] .session.done .time {
+        color: var(--dim);
+      }
+      /* The palette picker means nothing here — arcade owns its colours. */
+      body[data-theme='arcade'] #palette-row {
+        display: none;
+      }
+      /* Row labels get the spec's 150px column; wide toggle labels size
+         themselves, so the fixed width must not touch them. */
+      body[data-theme='arcade'] .setting-row {
+        font-size: 10px;
+        line-height: 1.6;
+      }
+      body[data-theme='arcade'] .setting-row:not(.wide-label) > span:first-child {
+        width: 150px;
+      }
+      /* Pinning every explicit classic px size down to the spec's grid. */
+      body[data-theme='arcade'] #header-path {
+        font-size: 9px;
+      }
+      body[data-theme='arcade'] .session .name {
+        font-size: 10.5px;
+      }
+      body[data-theme='arcade'] .session-rename {
+        font-size: 11px;
+      }
+      body[data-theme='arcade'] .session .time,
+      body[data-theme='arcade'] .session .title,
+      body[data-theme='arcade'] .reply-feedback,
+      body[data-theme='arcade'] .question-hint,
+      body[data-theme='arcade'] #toast-origin {
+        font-size: 8.5px;
+      }
+      body[data-theme='arcade'] .message,
+      body[data-theme='arcade'] .chat-bubble,
+      body[data-theme='arcade'] .dd-option,
+      body[data-theme='arcade'] .setting-subtitle,
+      body[data-theme='arcade'] .slider-value,
+      body[data-theme='arcade'] #usage-detail,
+      body[data-theme='arcade'] #tooltip-text,
+      body[data-theme='arcade'] .setting-hint,
+      body[data-theme='arcade'] #voice-status,
+      body[data-theme='arcade'] #tray-status,
+      body[data-theme='arcade'] #chat-empty {
+        font-size: 9px;
+      }
+      body[data-theme='arcade'] .message,
+      body[data-theme='arcade'] .chat-bubble {
+        line-height: 1.8;
+      }
+      body[data-theme='arcade'] .nav-item,
+      body[data-theme='arcade'] .setting-actions button,
+      body[data-theme='arcade'] #panel-footer button,
+      body[data-theme='arcade'] #usage-line,
+      body[data-theme='arcade'] .shortcut-input,
+      body[data-theme='arcade'] .reply input,
+      body[data-theme='arcade'] .reply button,
+      body[data-theme='arcade'] #chat-input,
+      body[data-theme='arcade'] #chat-send,
+      body[data-theme='arcade'] #mirror-input,
+      body[data-theme='arcade'] #mirror-send,
+      body[data-theme='arcade'] #toast-open,
+      body[data-theme='arcade'] #update-banner,
+      body[data-theme='arcade'] .rescan {
+        font-size: 10px;
+      }
+      /* Arcade switch colours: ON = lit cyan rail with the yellow knob;
+         OFF = dead grey. Geometry comes from the shared .switch rules. */
+      body[data-theme='arcade'] .switch {
+        background: #0e1418;
+        border-color: var(--dim);
+      }
+      body[data-theme='arcade'] input[type='checkbox']:checked + .switch {
+        background: #0a2a33;
+        border-color: var(--accent);
+        box-shadow:
+          0 0 8px rgba(53, 224, 255, 0.35),
+          inset 0 0 6px rgba(53, 224, 255, 0.2);
+      }
+      body[data-theme='arcade'] input[type='checkbox']:checked + .switch::before {
+        background: var(--warn);
+      }
+      body[data-theme='arcade'] .setting-row input[type='checkbox'] ~ span:not(.switch) {
+        color: var(--text-3);
+        font-size: 9px;
+      }
+      body[data-theme='arcade'] .setting-row input[type='checkbox']:checked ~ span:not(.switch) {
+        color: var(--accent);
       }
 
       @keyframes pulse {
@@ -226,6 +478,27 @@
         margin: 0;
         height: 100vh;
         box-sizing: border-box;
+      }
+      /* The settings live in their own window: everything else in this HTML
+         stays parked, and the modal is the whole viewport. */
+      #settings-window {
+        display: none;
+      }
+      .view-settings #row,
+      .view-settings #tooltip,
+      .view-settings #panel {
+        display: none !important;
+      }
+      .view-settings #settings-window {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        box-sizing: border-box;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
       }
       .hidden {
         display: none !important;
@@ -416,10 +689,12 @@
         overflow: hidden;
         box-sizing: border-box;
       }
-      #panel header svg {
+      #panel header svg,
+      #settings-window header svg {
         color: var(--accent);
       }
-      #panel header {
+      #panel header,
+      #settings-window header {
         display: flex;
         align-items: center;
         gap: 8px;
@@ -431,7 +706,13 @@
       body:not(.managed) #panel header {
         -webkit-app-region: drag;
       }
-      #panel header h1 {
+      /* The settings float free (not anchored to the bubble like the panel),
+         so their header is a drag handle in every mode, Windows included. */
+      #settings-window header {
+        -webkit-app-region: drag;
+      }
+      #panel header h1,
+      #settings-window header h1 {
         margin: 0;
         font-size: 12.5px;
         font-weight: 600;
@@ -445,7 +726,12 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      #close {
+      /* No path line here: the title itself pushes the ✕ to the far edge. */
+      #settings-window header h1 {
+        flex: 1;
+      }
+      #close,
+      #settings-close {
         -webkit-app-region: no-drag;
         background: none;
         border: 0;
@@ -454,7 +740,8 @@
         color: var(--muted);
         cursor: pointer;
       }
-      #close:hover {
+      #close:hover,
+      #settings-close:hover {
         color: var(--text);
       }
       #hint-banner {
@@ -503,7 +790,6 @@
          a flex child sizes to its content, overflows the panel and gets clipped
          by the panel's overflow: hidden, so its inner scroll never engages */
       #sessions,
-      #settings-pop,
       #chat,
       #mirror {
         -webkit-app-region: no-drag;
@@ -542,8 +828,12 @@
         background: var(--warn);
       }
       .session .name {
-        flex: 1;
+        /* Shrinks (with ellipsis) but never stretches: the pencil stays
+           glued to the name's end instead of being pushed to the far side. */
+        flex: 0 1 auto;
         min-width: 0;
+        /* The tab name is the card's headline — a touch above the base size. */
+        font-size: 13px;
         font-weight: 600;
         color: var(--text);
         overflow: hidden;
@@ -555,6 +845,9 @@
         font-weight: 500;
       }
       .session .time {
+        /* Soaks up the row's free space, keeping name + pencil together on
+           the left and itself pinned to the right. */
+        margin-left: auto;
         font-size: 11.5px;
         color: var(--muted);
         white-space: nowrap;
@@ -576,6 +869,11 @@
       #mirror-rename:hover {
         opacity: 1;
       }
+      /* The pencil sits on the headline now — a notch bigger and less shy. */
+      .session-rename {
+        font-size: 13px;
+        opacity: 0.65;
+      }
       .rename-input {
         font: inherit;
         color: inherit;
@@ -583,7 +881,9 @@
         border: none;
         border-bottom: 1px dashed currentColor;
         outline: none;
-        width: 70%;
+        /* Fixed width: the host span shrinks to content now, so a percent
+           width would collapse to nothing. */
+        width: 200px;
       }
       .session.waiting .time,
       .session.question .time {
@@ -777,11 +1077,66 @@
       }
 
       /* --- settings --- */
-      #settings-pop {
-        padding: 12px 14px;
+      #settings-body {
+        -webkit-app-region: no-drag;
+        flex: 1;
+        min-height: 0;
+        display: flex;
+      }
+      #settings-nav {
+        width: 148px;
+        flex-shrink: 0;
+        box-sizing: border-box;
+        padding: 10px 0;
         display: flex;
         flex-direction: column;
+        gap: 2px;
+        overflow-y: auto;
+        background: var(--bg-header);
+        border-right: 1px solid var(--hairline);
+      }
+      .nav-item {
+        background: none;
+        border: 0;
+        font: inherit;
+        font-size: 12px;
+        text-align: left;
+        padding: 6px 12px;
+        color: var(--text-3);
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .nav-item::before {
+        content: '· ';
+        color: var(--dim);
+      }
+      .nav-item:hover {
+        color: var(--text);
+        background: var(--bg-surface);
+      }
+      .nav-item.active {
+        color: var(--accent);
+        background: var(--bg-surface);
+      }
+      .nav-item.active::before {
+        content: '▸ ';
+        color: var(--accent);
+      }
+      #settings-content {
+        flex: 1;
+        min-width: 0;
+        overflow-y: auto;
+        padding: 12px 16px;
+      }
+      .settings-section {
+        display: none;
+        flex-direction: column;
         gap: 9px;
+      }
+      .settings-section.active {
+        display: flex;
       }
       .setting-subtitle {
         font-size: 11px;
@@ -805,9 +1160,6 @@
       }
       .setting-row.type-row > span:first-child {
         padding-left: 10px;
-      }
-      .setting-divider {
-        display: none;
       }
       .sel {
         flex: 1;
@@ -895,9 +1247,39 @@
       .setting-row input[type='checkbox'] {
         display: none;
       }
-      .setting-row input[type='checkbox'] + span {
+      /* ~, not +: the .switch rail sits between the input and the state text. */
+      .setting-row input[type='checkbox'] ~ span {
         color: var(--accent);
         cursor: pointer;
+      }
+      /* Pixel switch, both skins: 36×16 rail, 10×10 knob that jumps sides.
+         Square on purpose — the classic sliders wear square knobs too. */
+      .switch {
+        display: inline-block;
+        position: relative;
+        box-sizing: border-box;
+        width: 36px;
+        height: 16px;
+        flex-shrink: 0;
+        background: var(--bg-footer);
+        border: 1px solid var(--track);
+      }
+      .switch::before {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 10px;
+        height: 10px;
+        background: var(--dim);
+      }
+      .setting-row input[type='checkbox']:checked + .switch {
+        border-color: var(--accent);
+      }
+      .setting-row input[type='checkbox']:checked + .switch::before {
+        left: auto;
+        right: 2px;
+        background: var(--accent);
       }
       #voice-status {
         font-size: 11px;
@@ -1212,6 +1594,7 @@
          and a round bubble ends up sitting on a dark square. */
       body.crt #panel,
       body.crt #tooltip,
+      body.crt #settings-window,
       body.crt #bubble {
         box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55);
       }
@@ -1305,153 +1688,6 @@
         <span id="hint-banner-text"></span>
         <button id="hint-banner-close" title="Dispensar aviso">[x]</button>
       </div>
-      <div id="settings-pop" class="hidden">
-        <div class="setting-subtitle"># som</div>
-        <label class="setting-row">
-          <span>volume</span>
-          <input id="volume" type="range" min="0" max="100" />
-          <span class="slider-value" data-for="volume"></span>
-        </label>
-        <label class="setting-row">
-          <span>timbre</span>
-          <span class="sel"><select id="timbre">
-            <option value="marimba">marimba</option>
-            <option value="cristal">cristal</option>
-            <option value="grave">grave</option>
-          </select></span>
-        </label>
-        <label class="setting-row">
-          <span>voz</span>
-          <input id="voice-volume" type="range" min="0" max="100" />
-          <span class="slider-value" data-for="voice-volume"></span>
-        </label>
-        <div class="setting-subtitle"># volume por tipo</div>
-        <label class="setting-row type-row">
-          <span>início de task</span>
-          <input id="vol-start" data-kind="start" type="range" min="0" max="100" />
-          <span class="slider-value" data-for="vol-start"></span>
-        </label>
-        <label class="setting-row type-row">
-          <span>término de task</span>
-          <input id="vol-done" data-kind="done" type="range" min="0" max="100" />
-          <span class="slider-value" data-for="vol-done"></span>
-        </label>
-        <label class="setting-row type-row">
-          <span>pergunta</span>
-          <input id="vol-question" data-kind="question" type="range" min="0" max="100" />
-          <span class="slider-value" data-for="vol-question"></span>
-        </label>
-        <label class="setting-row type-row">
-          <span>esperando você</span>
-          <input id="vol-waiting" data-kind="waiting" type="range" min="0" max="100" />
-          <span class="slider-value" data-for="vol-waiting"></span>
-        </label>
-        <label class="setting-row wide-label">
-          <span>falar notificações (tts)</span>
-          <input id="tts" type="checkbox" />
-          <span id="tts-state">[off]</span>
-        </label>
-        <div class="setting-subtitle"># aparência</div>
-        <label class="setting-row">
-          <span>tema</span>
-          <span class="sel"><select id="theme"></select></span>
-        </label>
-        <label class="setting-row">
-          <span>tamanho</span>
-          <input id="panel-scale" type="range" />
-          <span class="slider-value" data-for="panel-scale"></span>
-        </label>
-        <label class="setting-row wide-label">
-          <span>tubo crt (scanline, brilho, curvatura)</span>
-          <input id="crt" type="checkbox" />
-          <span id="crt-state">[off]</span>
-        </label>
-        <label class="setting-row wide-label">
-          <span>iniciar com o sistema</span>
-          <input id="autostart" type="checkbox" />
-          <span id="autostart-state">[off]</span>
-        </label>
-        <div class="setting-subtitle"># atalhos globais</div>
-        <label class="setting-row">
-          <span>abrir/fechar o painel</span>
-          <input class="shortcut-input" data-shortcut="panel" readonly placeholder="clique e tecle" />
-        </label>
-        <label class="setting-row">
-          <span>mostrar/esconder a bolha</span>
-          <input class="shortcut-input" data-shortcut="bubble" readonly placeholder="clique e tecle" />
-        </label>
-        <label class="setting-row">
-          <span>encontrar a bolha</span>
-          <input class="shortcut-input" data-shortcut="find" readonly placeholder="clique e tecle" />
-        </label>
-        <label class="setting-row">
-          <span>abrir o chat do gerente</span>
-          <input class="shortcut-input" data-shortcut="chat" readonly placeholder="clique e tecle" />
-        </label>
-        <div class="setting-hint" id="shortcuts-hint">backspace limpa o atalho</div>
-        <div class="setting-subtitle"># terminal e voz</div>
-        <label class="setting-row">
-          <span>terminal</span>
-          <span class="sel"><select id="terminal"></select></span>
-        </label>
-        <label class="setting-row">
-          <span>voz do gerente</span>
-          <span class="sel"><select id="voice"></select></span>
-        </label>
-        <div id="voice-status" class="hidden"></div>
-        <div id="tray-status" class="hidden"></div>
-        <div class="setting-subtitle"># resposta rápida no chat</div>
-        <label class="setting-row">
-          <span>entrega</span>
-          <span class="sel"><select id="inbound">
-            <option value="default">padrão do claude code</option>
-            <option value="accept">aceitar direto</option>
-            <option value="hold">sempre revisar</option>
-            <option value="refuse">recusar</option>
-          </select></span>
-        </label>
-        <div class="setting-hint" id="inbound-hint"></div>
-        <div class="setting-subtitle"># limites</div>
-        <label class="setting-row">
-          <span>tokens/dia</span>
-          <input id="budget" type="range" min="0" max="500000" step="10000" />
-          <span class="slider-value" id="budget-label"></span>
-        </label>
-        <div id="usage-detail"></div>
-        <div id="usage-bar"><div></div></div>
-        <label class="setting-row wide-label">
-          <span>atualizar sozinho quando sair versão nova</span>
-          <input id="auto-update" type="checkbox" />
-          <span id="auto-update-state">[on]</span>
-        </label>
-        <label class="setting-row wide-label" title="Quando dá pra ver que você já está no terminal do chat, o gerente fica quieto. Isto decide o que fazer quando NÃO dá pra saber.">
-          <span>avisar mesmo sem saber se você está no chat</span>
-          <input id="announce-unknown" type="checkbox" />
-          <span id="announce-unknown-state">[on]</span>
-        </label>
-        <div id="bridge-section" class="hidden">
-          <div class="setting-subtitle"># ponte do gnome (wayland)</div>
-          <div class="setting-hint">
-            no wayland o sistema esconde as janelas dos terminais. a ponte é uma
-            extensãozinha do gnome que devolve ao vizor o poder de te levar
-            direto pra aba do chat — ela se instala sozinha no primeiro boot;
-            remover aqui desliga de vez.
-          </div>
-          <div class="setting-hint" id="bridge-state"></div>
-          <div class="setting-actions">
-            <span class="prompt">❯</span>
-            <button id="bridge-install">[instalar ponte]</button>
-            <button id="bridge-uninstall" class="hidden">[remover ponte]</button>
-          </div>
-        </div>
-        <div class="setting-actions">
-          <span class="prompt">❯</span>
-          <button id="sound-test">[testar som]</button>
-          <button id="voice-test">[testar voz]</button>
-          <button id="update-check">[buscar versão]</button>
-        </div>
-        <div class="setting-hint" id="update-check-feedback"></div>
-      </div>
       <div id="sessions"></div>
       <div id="mirror" class="hidden">
         <div id="mirror-top">
@@ -1479,6 +1715,201 @@
         <button id="mute" title="Som liga/desliga">[som]</button>
         <button id="quit" title="Encerrar o Vizor">[sair]</button>
         <span id="usage-line"></span>
+      </div>
+    </div>
+    <div id="settings-window">
+      <div class="crt-glass"><div class="crt-grain"></div></div>
+      <header>
+        <svg width="14" height="14" viewBox="0 0 11 11" shape-rendering="crispEdges">
+          <rect x="1" y="1" width="2" height="2" fill="currentColor" />
+          <rect x="3" y="3" width="2" height="2" fill="currentColor" />
+          <rect x="5" y="5" width="2" height="2" fill="currentColor" />
+          <rect x="3" y="7" width="2" height="2" fill="currentColor" />
+          <rect x="1" y="9" width="2" height="2" fill="currentColor" />
+          <rect x="8" y="9" width="3" height="2" fill="currentColor" />
+        </svg>
+        <h1 title="Configurações do Vizor">configurações</h1>
+        <button id="settings-close" title="Fechar (esc)">✕</button>
+      </header>
+      <div id="settings-body">
+        <nav id="settings-nav">
+          <button class="nav-item" data-section="som">som</button>
+          <button class="nav-item" data-section="aparencia">aparência</button>
+          <button class="nav-item" data-section="atalhos">atalhos</button>
+          <button class="nav-item" data-section="terminal-voz">terminal &amp; voz</button>
+          <button class="nav-item" data-section="resposta">resposta rápida</button>
+          <button class="nav-item" data-section="limites">limites</button>
+          <button class="nav-item" data-section="sistema">sistema</button>
+        </nav>
+        <div id="settings-content">
+          <section class="settings-section" data-section="som">
+            <div class="setting-subtitle"># som</div>
+            <label class="setting-row">
+              <span>volume</span>
+              <input id="volume" type="range" min="0" max="100" />
+              <span class="slider-value" data-for="volume"></span>
+            </label>
+            <label class="setting-row">
+              <span>timbre</span>
+              <span class="sel"><select id="timbre">
+                <option value="marimba">marimba</option>
+                <option value="cristal">cristal</option>
+                <option value="grave">grave</option>
+              </select></span>
+            </label>
+            <label class="setting-row">
+              <span>voz</span>
+              <input id="voice-volume" type="range" min="0" max="100" />
+              <span class="slider-value" data-for="voice-volume"></span>
+            </label>
+            <label class="setting-row wide-label">
+              <span>falar notificações (tts)</span>
+              <input id="tts" type="checkbox" /><span class="switch"></span>
+              <span id="tts-state">[off]</span>
+            </label>
+            <label class="setting-row wide-label" title="Quando dá pra ver que você já está no terminal do chat, o gerente fica quieto. Isto decide o que fazer quando NÃO dá pra saber.">
+              <span>avisar mesmo sem saber se você está no chat</span>
+              <input id="announce-unknown" type="checkbox" /><span class="switch"></span>
+              <span id="announce-unknown-state">[on]</span>
+            </label>
+            <div class="setting-subtitle"># volume por tipo</div>
+            <label class="setting-row type-row">
+              <span>início de task</span>
+              <input id="vol-start" data-kind="start" type="range" min="0" max="100" />
+              <span class="slider-value" data-for="vol-start"></span>
+            </label>
+            <label class="setting-row type-row">
+              <span>término de task</span>
+              <input id="vol-done" data-kind="done" type="range" min="0" max="100" />
+              <span class="slider-value" data-for="vol-done"></span>
+            </label>
+            <label class="setting-row type-row">
+              <span>pergunta</span>
+              <input id="vol-question" data-kind="question" type="range" min="0" max="100" />
+              <span class="slider-value" data-for="vol-question"></span>
+            </label>
+            <label class="setting-row type-row">
+              <span>esperando você</span>
+              <input id="vol-waiting" data-kind="waiting" type="range" min="0" max="100" />
+              <span class="slider-value" data-for="vol-waiting"></span>
+            </label>
+            <div class="setting-actions">
+              <span class="prompt">❯</span>
+              <button id="sound-test">[testar som]</button>
+              <button id="voice-test">[testar voz]</button>
+            </div>
+          </section>
+          <section class="settings-section" data-section="aparencia">
+            <div class="setting-subtitle"># aparência</div>
+            <label class="setting-row">
+              <span>tema</span>
+              <span class="sel"><select id="theme"></select></span>
+            </label>
+            <label class="setting-row" id="palette-row">
+              <span>cores</span>
+              <span class="sel"><select id="palette"></select></span>
+            </label>
+            <label class="setting-row">
+              <span>tamanho</span>
+              <input id="panel-scale" type="range" />
+              <span class="slider-value" data-for="panel-scale"></span>
+            </label>
+            <label class="setting-row wide-label">
+              <span>tubo crt (scanline, brilho, curvatura)</span>
+              <input id="crt" type="checkbox" /><span class="switch"></span>
+              <span id="crt-state">[off]</span>
+            </label>
+          </section>
+          <section class="settings-section" data-section="atalhos">
+            <div class="setting-subtitle"># atalhos globais</div>
+            <label class="setting-row">
+              <span>abrir/fechar o painel</span>
+              <input class="shortcut-input" data-shortcut="panel" readonly placeholder="clique e tecle" />
+            </label>
+            <label class="setting-row">
+              <span>mostrar/esconder a bolha</span>
+              <input class="shortcut-input" data-shortcut="bubble" readonly placeholder="clique e tecle" />
+            </label>
+            <label class="setting-row">
+              <span>encontrar a bolha</span>
+              <input class="shortcut-input" data-shortcut="find" readonly placeholder="clique e tecle" />
+            </label>
+            <label class="setting-row">
+              <span>abrir o chat do gerente</span>
+              <input class="shortcut-input" data-shortcut="chat" readonly placeholder="clique e tecle" />
+            </label>
+            <div class="setting-hint" id="shortcuts-hint">backspace limpa o atalho</div>
+          </section>
+          <section class="settings-section" data-section="terminal-voz">
+            <div class="setting-subtitle"># terminal e voz</div>
+            <label class="setting-row">
+              <span>terminal</span>
+              <span class="sel"><select id="terminal"></select></span>
+            </label>
+            <label class="setting-row">
+              <span>voz do gerente</span>
+              <span class="sel"><select id="voice"></select></span>
+            </label>
+            <div id="voice-status" class="hidden"></div>
+            <div id="bridge-section" class="hidden">
+              <div class="setting-subtitle"># ponte do gnome (wayland)</div>
+              <div class="setting-hint">
+                no wayland o sistema esconde as janelas dos terminais. a ponte é uma
+                extensãozinha do gnome que devolve ao vizor o poder de te levar
+                direto pra aba do chat — ela se instala sozinha no primeiro boot;
+                remover aqui desliga de vez.
+              </div>
+              <div class="setting-hint" id="bridge-state"></div>
+              <div class="setting-actions">
+                <span class="prompt">❯</span>
+                <button id="bridge-install">[instalar ponte]</button>
+                <button id="bridge-uninstall" class="hidden">[remover ponte]</button>
+              </div>
+            </div>
+          </section>
+          <section class="settings-section" data-section="resposta">
+            <div class="setting-subtitle"># resposta rápida no chat</div>
+            <label class="setting-row">
+              <span>entrega</span>
+              <span class="sel"><select id="inbound">
+                <option value="default">padrão do claude code</option>
+                <option value="accept">aceitar direto</option>
+                <option value="hold">sempre revisar</option>
+                <option value="refuse">recusar</option>
+              </select></span>
+            </label>
+            <div class="setting-hint" id="inbound-hint"></div>
+          </section>
+          <section class="settings-section" data-section="limites">
+            <div class="setting-subtitle"># limites</div>
+            <label class="setting-row">
+              <span>tokens/dia</span>
+              <input id="budget" type="range" min="0" max="500000" step="10000" />
+              <span class="slider-value" id="budget-label"></span>
+            </label>
+            <div id="usage-detail"></div>
+            <div id="usage-bar"><div></div></div>
+          </section>
+          <section class="settings-section" data-section="sistema">
+            <div class="setting-subtitle"># sistema</div>
+            <label class="setting-row wide-label">
+              <span>iniciar com o sistema</span>
+              <input id="autostart" type="checkbox" /><span class="switch"></span>
+              <span id="autostart-state">[off]</span>
+            </label>
+            <label class="setting-row wide-label">
+              <span>atualizar sozinho quando sair versão nova</span>
+              <input id="auto-update" type="checkbox" /><span class="switch"></span>
+              <span id="auto-update-state">[on]</span>
+            </label>
+            <div id="tray-status" class="hidden"></div>
+            <div class="setting-actions">
+              <span class="prompt">❯</span>
+              <button id="update-check">[buscar versão]</button>
+            </div>
+            <div class="setting-hint" id="update-check-feedback"></div>
+          </section>
+        </div>
       </div>
     </div>
     <script src="app.js"></script>

@@ -29,7 +29,7 @@ import { loadConfig, saveConfig } from './config-store.js';
 import { TokenBudget } from './token-budget.js';
 import { terminal, tts } from './platform.js';
 import { VOICES } from './sherpa-installer.js';
-import { THEMES } from './themes.js';
+import { THEMES, PALETTES } from './themes.js';
 import { PANEL_SCALE, clampScale, panelSizeForScale } from './panel-size.js';
 import {
   anchorVisible,
@@ -278,6 +278,7 @@ const tokenBudget = new TokenBudget({ file: usageFile });
 const isEconomyMode = () => tokenBudget.isExceeded(managerConfig.tokenBudgetDaily);
 let mainWindow = null;
 let overlayWindow = null;
+let settingsWindow = null;
 let spotlightWindow = null;
 let tray = null;
 let socketServer = null;
@@ -287,7 +288,7 @@ let bubbleAnchor = null;
 let dragState = null;
 
 function sendToRenderer(channel, payload) {
-  for (const win of [mainWindow, overlayWindow]) {
+  for (const win of [mainWindow, overlayWindow, settingsWindow]) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   }
 }
@@ -328,6 +329,7 @@ function sendState() {
     hint: lastHint,
     voiceDownloading: tts.downloadingVoice(),
     theme: managerConfig.theme,
+    palette: managerConfig.palette,
     trayAvailable: Boolean(tray),
     trayNeedsRelogin,
     crt: managerConfig.crt,
@@ -464,22 +466,84 @@ const JUST_CLOSED_MS = 150;
 // opens; without this settle window the panel would blur itself shut.
 const SETTLE_MS = 500;
 
+// Re-applying zoom or bounds that did not change still makes Chromium drop
+// and reallocate the window's frame, and show() then flashes an unpainted
+// frame before the content lands — so both only run on a real change.
+function applyZoom(win, factor) {
+  if (win.webContents.getZoomFactor() !== factor) win.webContents.setZoomFactor(factor);
+}
+
+function applyBounds(win, bounds) {
+  const current = win.getBounds();
+  if (
+    current.x !== bounds.x ||
+    current.y !== bounds.y ||
+    current.width !== bounds.width ||
+    current.height !== bounds.height
+  ) {
+    win.setBounds(bounds);
+  }
+}
+
+// Windows plays a ~200ms cloak fade every time a hidden window is shown
+// again, and on a transparent window nothing cancels it — frame captures
+// show the desktop bleeding through the panel while it runs, which reads as
+// a blink. So wherever windows can be positioned, "closed" overlay windows
+// are never hidden: they park far offscreen, transparent and click-through,
+// and opening is an atomic move back. Born parked, the one real show() (and
+// its fade) plays offscreen at boot. Wayland keeps plain hide/show — no
+// positioning there, and no such fade either.
+const PARK = { x: -32000, y: -32000 };
+
+function parkWindow(win) {
+  if (!win || win.isDestroyed()) return;
+  if (!canPositionWindows) return win.hide();
+  win.setOpacity(0);
+  win.setIgnoreMouseEvents(true);
+  const { width, height } = win.getBounds();
+  win.setBounds({ x: PARK.x, y: PARK.y, width, height });
+  win.blur();
+}
+
+function unparkWindow(win, { focus = false } = {}) {
+  if (!canPositionWindows) {
+    if (focus) win.show();
+    else win.showInactive();
+    return;
+  }
+  win.setIgnoreMouseEvents(false);
+  win.setOpacity(1);
+  if (!win.isVisible()) {
+    // Only when born-parked could not run (window died and came back).
+    if (focus) win.show();
+    else win.showInactive();
+  } else if (focus) {
+    win.focus();
+  }
+}
+
+function bornParked(win) {
+  if (!canPositionWindows) return;
+  parkWindow(win);
+  win.showInactive();
+}
+
 function showOverlay(mode, { focus = false } = {}) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   overlayMode = mode;
-  overlayWindow.webContents.setZoomFactor(mode === 'panel' ? panelScale() : 1);
-  overlayWindow.setBounds(overlayBounds(mode));
+  applyZoom(overlayWindow, mode === 'panel' ? panelScale() : 1);
+  applyBounds(overlayWindow, overlayBounds(mode));
   overlayWindow.webContents.send('overlay:mode', mode);
-  if (focus) overlayWindow.show();
-  else overlayWindow.showInactive();
-  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-
+  unparkWindow(overlayWindow, { focus });
+  // Re-asserting an already-set topmost flag still round-trips through
+  // SetWindowPos and can blink the window — only touch it when it dropped.
+  if (!overlayWindow.isAlwaysOnTop()) overlayWindow.setAlwaysOnTop(true, 'screen-saver');
 }
 
 function hideOverlay() {
   clearTimeout(tooltipTimer);
   overlayMode = null;
-  if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+  parkWindow(overlayWindow);
 }
 
 function openPanel() {
@@ -498,7 +562,11 @@ function showTooltip() {
 
 ipcMain.on('overlay:toggle-panel', () => {
   log('panel toggle requested');
-  if (overlayMode === 'panel') return hideOverlay();
+  if (overlayMode === 'panel') {
+    // Collapsing on the bubble dismisses the whole ensemble, settings included.
+    closeSettingsWindow();
+    return hideOverlay();
+  }
   if (Date.now() - closedByBlurAt < JUST_CLOSED_MS) return;
   openPanel();
 });
@@ -508,12 +576,85 @@ ipcMain.on('overlay:close', () => {
   hideOverlay();
 });
 
+// --- settings window: its own modal, living beside the panel -------------
+// Sized like the panel is: the base box scaled by the same panelScale, with
+// the zoom following, so the settings text tracks the size the user picked.
+// The settings read better a notch larger than the panel, so the old 120%
+// is the new 100%: this boost multiplies both the box and the zoom.
+const SETTINGS_SIZE = { width: 640, height: 480 };
+const SETTINGS_ZOOM = 1.2;
+let settingsOpenedAt = 0;
+
+// Logical state, not isVisible(): a parked window still counts as visible
+// to the OS.
+let settingsShown = false;
+
+function settingsVisible() {
+  return Boolean(settingsWindow && !settingsWindow.isDestroyed() && settingsShown);
+}
+
+function settingsBounds() {
+  const factor = panelScale() * SETTINGS_ZOOM;
+  const anchor = bubbleAnchor ?? { x: 0, y: 0 };
+  const workArea = screen.getDisplayNearestPoint(anchor).workArea;
+  const width = Math.min(Math.round(SETTINGS_SIZE.width * factor), workArea.width);
+  const height = Math.min(Math.round(SETTINGS_SIZE.height * factor), workArea.height);
+  return {
+    x: workArea.x + Math.round((workArea.width - width) / 2),
+    y: workArea.y + Math.round((workArea.height - height) / 2),
+    width,
+    height,
+  };
+}
+
+function openSettingsWindow() {
+  if (!settingsWindow || settingsWindow.isDestroyed()) return;
+  settingsOpenedAt = Date.now();
+  applyZoom(settingsWindow, panelScale() * SETTINGS_ZOOM);
+  // Every open recenters — a drag holds only while the window stays up.
+  // Already visible means a live scale change: resize in place instead.
+  if (canPositionWindows) {
+    if (settingsVisible()) resizeSettingsInPlace();
+    else applyBounds(settingsWindow, settingsBounds());
+  }
+  settingsShown = true;
+  unparkWindow(settingsWindow, { focus: true });
+  if (!settingsWindow.isAlwaysOnTop()) settingsWindow.setAlwaysOnTop(true, 'screen-saver');
+}
+
+// A visible non-resizable window swallows programmatic resizes on Windows
+// (hidden ones take them, which is why reopening used to fix the size) —
+// resizable flips on just for the operation.
+function resizeSettingsInPlace() {
+  const { width, height } = settingsBounds();
+  const wasResizable = settingsWindow.isResizable();
+  if (!wasResizable) settingsWindow.setResizable(true);
+  const { x, y } = settingsWindow.getBounds();
+  settingsWindow.setBounds({ x, y, width, height });
+  if (!wasResizable) settingsWindow.setResizable(false);
+}
+
+function closeSettingsWindow({ refocusPanel = false } = {}) {
+  if (!settingsVisible()) return;
+  settingsShown = false;
+  parkWindow(settingsWindow);
+  // Hand focus back to the panel when it is still up, so its own blur cycle
+  // re-arms — otherwise the next outside click would have no blur to fire.
+  if (refocusPanel && overlayMode === 'panel' && overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.focus();
+  }
+}
+
+ipcMain.on('settings:open', () => openSettingsWindow());
+ipcMain.on('settings:close', () => closeSettingsWindow({ refocusPanel: true }));
+
 function bubbleVisible() {
   return Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible());
 }
 
 function hideToTray() {
   hideOverlay();
+  closeSettingsWindow();
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
   refreshTrayMenu();
 }
@@ -707,11 +848,7 @@ function refreshTrayMenu() {
       showBubble();
       openPanel();
     },
-    settings: () => {
-      showBubble();
-      openPanel();
-      sendToRenderer('ui:open-settings');
-    },
+    settings: () => openSettingsWindow(),
     toggle: () => (bubbleVisible() ? hideToTray() : showBubble()),
     find: findBubble,
     quit: () => app.quit(),
@@ -776,7 +913,10 @@ const windowOptions = {
   alwaysOnTop: true,
   skipTaskbar: true,
   hasShadow: false,
-  webPreferences: { preload: preloadPath, contextIsolation: true },
+  // backgroundThrottling: false — a hidden window otherwise gets its
+  // compositing suspended, and show() flashes an empty frame before the
+  // renderer wakes up (most visible on Windows with transparent windows).
+  webPreferences: { preload: preloadPath, contextIsolation: true, backgroundThrottling: false },
 };
 
 // visibleOnFullScreen turns the app into an accessory on macOS (no dock
@@ -795,7 +935,7 @@ function stayOnTop(win) {
 function setFloatAboveEverything(enabled) {
   if (floatAboveEverything === enabled) return;
   floatAboveEverything = enabled;
-  for (const win of [mainWindow, overlayWindow]) stayOnTop(win);
+  for (const win of [mainWindow, overlayWindow, settingsWindow]) stayOnTop(win);
 }
 
 function createWindows() {
@@ -851,24 +991,78 @@ function createWindows() {
     sendToRenderer('ui:env', { managed: canPositionWindows });
     sendState();
   });
+  bornParked(overlayWindow);
+
+  settingsWindow = new BrowserWindow({
+    ...windowOptions,
+    width: Math.round(SETTINGS_SIZE.width * SETTINGS_ZOOM),
+    height: Math.round(SETTINGS_SIZE.height * SETTINGS_ZOOM),
+    show: false,
+    // Frameless + resizable grows grab-borders on Windows/macOS, which is the
+    // only "resize" this fixed layout could ever offer — drop them. Linux
+    // keeps resizable: true because false breaks -webkit-app-region drag.
+    resizable: process.platform === 'linux',
+    // Chromium keys file:// zoom per origin and shares it across windows, so
+    // the settings boost would leak into the bubble and the panel (they load
+    // the same app.html). Its own partition gives it a zoom map of its own.
+    webPreferences: { ...windowOptions.webPreferences, partition: 'vizor-settings' },
+  });
+  stayOnTop(settingsWindow);
+  settingsWindow.loadFile(path.join(rendererDir, 'app.html'), { query: { view: 'settings' } });
+  settingsWindow.webContents.on('did-finish-load', () => {
+    sendToRenderer('ui:env', { managed: canPositionWindows });
+    sendState();
+  });
+  bornParked(settingsWindow);
+
   // Focus bounces back to the bubble window right after a click, so a bare
   // blur is not enough: the panel only closes when no window of ours is
   // focused any more — that is, when the click really landed outside.
   // Linux ignores maximizable: false, so a double click on a drag region (the
   // whole body on Wayland, by design) can still maximize — undo it on the spot.
-  for (const win of [mainWindow, overlayWindow]) {
+  for (const win of [mainWindow, overlayWindow, settingsWindow]) {
     win.on('maximize', () => win.unmaximize());
   }
 
+  // Dragging the settings by their header runs inside a system move loop
+  // where none of our windows reports focus — the cursor riding on the
+  // settings window is the tell that this is not an outside click.
+  const cursorOnSettings = () => {
+    if (!settingsVisible()) return false;
+    const bounds = settingsWindow.getBounds();
+    const cursor = screen.getCursorScreenPoint();
+    return (
+      cursor.x >= bounds.x &&
+      cursor.x < bounds.x + bounds.width &&
+      cursor.y >= bounds.y &&
+      cursor.y < bounds.y + bounds.height
+    );
+  };
+
+  // A click outside every window of ours dismisses the whole ensemble: the
+  // panel and the settings go together, while clicks hopping between them
+  // keep both up (some window of ours is focused again by the time we look).
+  const closeOnOutsideClick = () => {
+    setTimeout(() => {
+      const ours = [mainWindow, overlayWindow, settingsWindow].some(
+        (win) => win && !win.isDestroyed() && win.isFocused(),
+      );
+      if (ours || cursorOnSettings()) return;
+      if (overlayMode === 'panel') {
+        hideOverlay();
+        closedByBlurAt = Date.now();
+      }
+      closeSettingsWindow();
+    }, 120);
+  };
+
   overlayWindow.on('blur', () => {
     if (overlayMode !== 'panel' || Date.now() - openedAt < SETTLE_MS) return;
-    setTimeout(() => {
-      if (overlayMode !== 'panel') return;
-      const ours = [mainWindow, overlayWindow].some((win) => win && !win.isDestroyed() && win.isFocused());
-      if (ours) return;
-      hideOverlay();
-      closedByBlurAt = Date.now();
-    }, 120);
+    closeOnOutsideClick();
+  });
+  settingsWindow.on('blur', () => {
+    if (!settingsVisible() || Date.now() - settingsOpenedAt < SETTLE_MS) return;
+    closeOnOutsideClick();
   });
 }
 
@@ -1059,6 +1253,7 @@ ipcMain.handle('config:get', () => ({
   })),
   voices: Object.entries(VOICES).map(([value, spec]) => ({ value, label: spec.label })),
   themes: Object.entries(THEMES).map(([value, spec]) => ({ value, label: spec.label })),
+  palettes: Object.entries(PALETTES).map(([value, spec]) => ({ value, label: spec.label })),
   panelScaleRange: PANEL_SCALE,
 }));
 
@@ -1067,6 +1262,9 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (typeof partial?.terminal === 'string') allowed.terminal = partial.terminal;
   if (typeof partial?.voice === 'string' && VOICES[partial.voice]) allowed.voice = partial.voice;
   if (typeof partial?.theme === 'string' && THEMES[partial.theme]) allowed.theme = partial.theme;
+  if (typeof partial?.palette === 'string' && PALETTES[partial.palette]) {
+    allowed.palette = partial.palette;
+  }
   if (Number.isFinite(partial?.panelScale)) allowed.panelScale = clampScale(partial.panelScale);
   if (typeof partial?.crt === 'boolean') allowed.crt = partial.crt;
   if (typeof partial?.autoUpdate === 'boolean') allowed.autoUpdate = partial.autoUpdate;
@@ -1104,6 +1302,7 @@ ipcMain.handle('config:set', (_event, partial) => {
   }
   sendState();
   if (allowed.panelScale && overlayMode === 'panel') showOverlay('panel', { focus: true });
+  if (allowed.panelScale && settingsVisible()) openSettingsWindow();
   // Speaking the sample also pulls the model when it is not there yet.
   if (allowed.voice) tts.speak('Voz trocada. Agora eu falo assim!', { voice: allowed.voice });
   if (allowed.shortcuts) {
