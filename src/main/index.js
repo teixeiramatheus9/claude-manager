@@ -79,6 +79,8 @@ import {
   AUTOMATION_PANE,
 } from './permissions-darwin.js';
 import { linuxFocusHint, win32FocusHint } from './focus-hints.js';
+import { resolveWindowDriver } from './window-driver.js';
+import { installBridge, uninstallBridge, bridgeStatus } from './bridge-manager.js';
 import { sendUserMessage } from './cc-peer.js';
 
 // Two window-management modes:
@@ -106,6 +108,18 @@ const displayMode =
           sessionType: process.env.XDG_SESSION_TYPE,
         });
 const canPositionWindows = displayMode.managed;
+
+// Which window backend the hunt gets: xdotool on X11, the Vizor Bridge on
+// Wayland when it answers. Cached briefly so a click never pays two probes.
+let cachedDriver = null;
+let cachedDriverAt = 0;
+async function windowDriver() {
+  if (!cachedDriver || Date.now() - cachedDriverAt > 30_000) {
+    cachedDriver = await resolveWindowDriver({ canInjectInput: displayMode.canInjectInput });
+    cachedDriverAt = Date.now();
+  }
+  return cachedDriver;
+}
 
 // The AppImage launcher drops build.linux.executableArgs, so a packaged run can
 // arrive here without the switch and silently lose the overlay. Relaunch once
@@ -786,6 +800,21 @@ ipcMain.handle('sessions:rescan', () => {
 
 ipcMain.on('update:apply', applyUpdate);
 
+ipcMain.handle('bridge:status', async () => ({
+  ...(await bridgeStatus()),
+  relevant: process.platform === 'linux' && !displayMode.canInjectInput,
+}));
+ipcMain.handle('bridge:install', async () => {
+  const result = await installBridge();
+  cachedDriver = null; // re-resolve on the next focus click
+  return result;
+});
+ipcMain.handle('bridge:uninstall', async () => {
+  await uninstallBridge();
+  cachedDriver = null;
+  return {};
+});
+
 ipcMain.handle('update:check', async () => {
   const status = await (updaterHandle.check?.() ?? updateStatus);
   return { ...status, currentVersion: app.getVersion() };
@@ -1029,6 +1058,7 @@ async function huntSessionTab(session) {
   const result = await terminal.focusChatTab(await sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
+    driver: (await windowDriver()).driver,
     ...sessionFocusTarget(session),
   });
   log(`focus ${session?.id?.slice(0, 8)} in ${Date.now() - startedAt}ms: ${JSON.stringify(result)}`);
@@ -1092,6 +1122,7 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const result = await terminal.answerQuestionInWarp(await sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
+    driver: (await windowDriver()).driver,
     ...sessionFocusTarget(session),
   });
   if (result === 'answered') registry.markAnswered(sessionId);
@@ -1119,6 +1150,7 @@ async function replyToSession(session, text) {
     writeClipboard: (value) => clipboard.writeText(value),
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
+    driver: (await windowDriver()).driver,
     ...sessionFocusTarget(session),
   });
 }
