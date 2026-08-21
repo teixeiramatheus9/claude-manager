@@ -1,13 +1,11 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import {
-  playerCommand,
+import { playerCommand,
   predownloadVoice,
   speak,
   speakNeural,
   stopSpeaking,
-  systemVoiceCommand,
-} from '../src/main/tts.js';
+  systemVoiceCommand, speakableText } from '../src/main/tts.js';
 import {
   DEFAULT_VOICE,
   VOICES,
@@ -182,5 +180,22 @@ describe('predownloadVoice', () => {
       false,
     );
     expect(ensured).toEqual([]);
+  });
+});
+
+
+// Issue #71: the pt-BR voices read "Vizor" as written (vi-ZOR); the brand is
+// pronounced like the English "visor". Speech-only fix — displays keep Vizor.
+describe('speakableText', () => {
+  it('respells Vizor so the pt-BR voice says vaizor', () => {
+    expect(speakableText('O Vizor se atualizou!')).toBe('O Váizor se atualizou!');
+  });
+
+  it('catches any casing, as a whole word, anywhere in the phrase', () => {
+    expect(speakableText('vizor, VIZOR e Vizor')).toBe('Váizor, Váizor e Váizor');
+  });
+
+  it('never touches Vizor inside another word', () => {
+    expect(speakableText('supervizor de plantão')).toBe('supervizor de plantão');
   });
 });
