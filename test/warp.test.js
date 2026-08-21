@@ -525,6 +525,48 @@ function fakeDriver({ windows, tabTitles = null } = {}) {
   };
 }
 
+describe('focusChatTab via gnome-terminal dbus tabs', () => {
+  it('switches tabs through active-tab and never presses a key', async () => {
+    let selected = 1;
+    const titles = ['meu-projeto — claude', 'outra-coisa'];
+    const execFn = async (command, args) => {
+      if (command === 'gdbus' && args[0] === 'introspect')
+        return { stdout: 'node /org/gnome/Terminal/window {\n  node 1 {};\n}' };
+      if (command === 'gdbus' && args.includes('org.gtk.Actions.Activate')) {
+        const index = Number(args[args.length - 2].match(/\d+/)[0]);
+        if (index < titles.length) selected = index;
+        return { stdout: '()' };
+      }
+      if (command === 'gdbus' && args.includes('org.gtk.Actions.Describe'))
+        return { stdout: `((true, signature 'i', [<${selected}>]),)` };
+      return { stdout: '' };
+    };
+    const actions = [];
+    const driver = {
+      listWindows: async () => [
+        { id: '7', wmClass: 'gnome-terminal-server', title: titles[selected] },
+      ],
+      activate: async (id) => {
+        actions.push({ op: 'activate', id });
+      },
+      getTitle: async () => titles[selected],
+      pressKey: async (combo) => {
+        actions.push({ op: 'key', combo });
+      },
+      typeText: async () => {},
+    };
+    const result = await focusChatTab(['meu-projeto'], {
+      terminal: 'gnome-terminal',
+      driver,
+      execFn,
+      delayMs: 0,
+    });
+    expect(result).toMatchObject({ focused: true, tabFound: true, matchedTitle: 'meu-projeto — claude' });
+    expect(actions).toContainEqual({ op: 'activate', id: '7' });
+    expect(actions.some((action) => action.op === 'key')).toBe(false);
+  });
+});
+
 describe('focusChatTab with an injected driver', () => {
   it('hunts tabs through the driver instead of spawning xdotool', async () => {
     const { driver, actions } = fakeDriver({

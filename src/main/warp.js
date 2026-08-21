@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { selectExactTab, VIA_APP_HINTS } from './terminal-target.js';
+import { listTerminalWindows, selectTab } from './gnome-terminal-dbus.js';
 
 const execFileAsync = promisify(execFile);
 const REPLY_TYPE_DELAY_MS = 350;
@@ -117,6 +118,8 @@ export const TERMINALS = {
     classHint: 'gnome-terminal',
     nextTabKey: 'ctrl+Next',
     hasTabs: true,
+    // tabs also switch through the window's own org.gtk.Actions — no keys
+    dbusTabs: true,
   },
   kgx: { label: 'GNOME Console', classHint: 'kgx', nextTabKey: 'ctrl+Next', hasTabs: true },
   ptyxis: {
@@ -282,6 +285,28 @@ export async function focusChatTab(
     if (direct) {
       await drv.activate(direct.id);
       return { focused: true, tabFound: true, matchedTitle: direct.title, cause: null };
+    }
+
+    // GNOME Terminal switches tabs through its own D-Bus action: zero
+    // keystrokes, so it may run regardless of the injection policy — on
+    // Wayland-without-bridge the driver simply sees no terminal window and
+    // this falls through to the plain window raise below.
+    if (spec.dbusTabs) {
+      for (const windowPath of await listTerminalWindows({ execFn })) {
+        for (let index = 0; index < maxTabs; index++) {
+          if (!(await selectTab({ execFn }, windowPath, index))) break; // wrapped
+          await sleep(delayMs);
+          const fresh = await drv.listWindows();
+          const hit = fresh.find(
+            (window) =>
+              window.wmClass.toLowerCase().includes(spec.classHint) && matches(window.title),
+          );
+          if (hit) {
+            await drv.activate(hit.id);
+            return { focused: true, tabFound: true, matchedTitle: hit.title, cause: null };
+          }
+        }
+      }
     }
 
     // Cycling tabs means pressing keys. The default driver is XTEST — refused
