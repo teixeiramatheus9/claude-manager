@@ -430,6 +430,26 @@
       #close:hover {
         color: var(--text);
       }
+      #hint-banner {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        margin: 4px 10px;
+        padding: 5px 8px;
+        font-size: 11px;
+        border: 1px dashed var(--warn, #c9a227);
+        color: var(--warn, #c9a227);
+      }
+      #hint-banner span {
+        flex: 1;
+      }
+      #hint-banner button {
+        background: none;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        font: inherit;
+      }
       #update-banner {
         -webkit-app-region: no-drag;
         width: 100%;
@@ -1231,6 +1251,10 @@
         <button id="close" title="Fechar">✕</button>
       </header>
       <button id="update-banner" class="hidden"></button>
+      <div id="hint-banner" class="hidden">
+        <span id="hint-banner-text"></span>
+        <button id="hint-banner-close" title="Dispensar aviso">[x]</button>
+      </div>
       <div id="settings-pop" class="hidden">
         <div class="setting-subtitle"># som</div>
         <label class="setting-row">

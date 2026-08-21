@@ -78,7 +78,7 @@ import {
   ACCESSIBILITY_PANE,
   AUTOMATION_PANE,
 } from './permissions-darwin.js';
-import { linuxFocusHint, win32FocusHint } from './focus-hints.js';
+import { linuxFocusHint, win32FocusHint, hintAnnouncement } from './focus-hints.js';
 import { resolveWindowDriver } from './window-driver.js';
 import { installBridge, uninstallBridge, bridgeStatus, autoSetupBridge } from './bridge-manager.js';
 import { sendUserMessage } from './cc-peer.js';
@@ -283,6 +283,7 @@ function sendState() {
     sessions: registry.list(),
     unread: registry.unreadCount(),
     update: updateStatus,
+    hint: lastHint,
     voiceDownloading: tts.downloadingVoice(),
     theme: managerConfig.theme,
     trayAvailable: Boolean(tray),
@@ -1012,13 +1013,34 @@ function sessionFocusTarget(session) {
 // notification names the missing piece (xdotool, kitty remote control).
 // Windows: no dialog either — the actionable miss is a terminal hiding its
 // tab titles, or PowerShell being unreachable.
+// The last hint survives the balloon's 8s: the panel keeps it as a banner
+// until the user dismisses it (issue #62 — whoever was away finds it later).
+let lastHint = null;
+
+function announceHint(hint) {
+  const parts = hintAnnouncement(hint);
+  if (!parts) return;
+  lastHint = { key: hint.key, title: hint.title, body: hint.body };
+  sendToRenderer('tooltip', parts.tooltip);
+  showTooltip();
+  const note = new Notification(parts.notification);
+  if (hint.pane) note.on('click', () => shell.openExternal(hint.pane));
+  note.show();
+  speakAsManager(parts.speech);
+  sendState();
+}
+
+ipcMain.on('hint:dismiss', () => {
+  lastHint = null;
+  sendState();
+});
+
 let focusNudgeDone = false;
 function nudgeFocusPrereqs(hint, platform) {
   if (!hint) return; // nothing actionable — stay quiet and keep watching
   focusNudgeDone = true;
   log(`${platform} focus hint: ${hint.key}`);
-  new Notification({ title: hint.title, body: hint.body }).show();
-  speakAsManager(hint.speech);
+  announceHint(hint);
 }
 
 // Ad-hoc signing (issue #58) means every self-update hands macOS a new code
@@ -1037,18 +1059,17 @@ async function renewMacosGrantAfterUpdate() {
       log('macos accessibility lost after update — resetting stale TCC entries');
       await resetAccessibilityEntries('io.github.teixeiramatheus9.vizor');
       systemPreferences.isTrustedAccessibilityClient(true);
-      const note = new Notification({
+      announceHint({
+        key: 'macos-grant-renewed',
         title: 'A atualização renovou minha identidade',
         body:
           'O macOS zerou a permissão de Acessibilidade na atualização. ' +
           'Reative o Vizor lá que volto a te levar pra aba certa.',
-      });
-      note.on('click', () => shell.openExternal(ACCESSIBILITY_PANE));
-      note.show();
-      speakAsManager(
-        'A atualização renovou minha identidade no sistema! Me autoriza de novo ' +
+        speech:
+          'A atualização renovou minha identidade no sistema! Me autoriza de novo ' +
           'lá em acessibilidade que eu volto a te levar direto pra aba do chat.',
-      );
+        pane: ACCESSIBILITY_PANE,
+      });
     }
     writeGrantMemory(grantMemoryFile, { accessible: nowGranted });
   } catch (error) {
@@ -1074,20 +1095,17 @@ async function nudgeMacosPermissions() {
       }
       systemPreferences.isTrustedAccessibilityClient(true);
     }
-    const note = new Notification({
+    announceHint({
+      key: 'macos-permissions',
       title: 'O gerente precisa de uma permissão',
       body:
         'Pra te levar direto pra aba do chat, ative o Vizor em ' +
         'Acessibilidade (e em Automação) na Privacidade e Segurança.',
-    });
-    note.on('click', () => {
-      shell.openExternal(accessible ? AUTOMATION_PANE : ACCESSIBILITY_PANE);
-    });
-    note.show();
-    speakAsManager(
-      'Preciso de uma permissãozinha sua nos ajustes! Libera o acesso pra mim ' +
+      speech:
+        'Preciso de uma permissãozinha sua nos ajustes! Libera o acesso pra mim ' +
         'que aí eu te levo direto pra aba do chat.',
-    );
+      pane: accessible ? AUTOMATION_PANE : ACCESSIBILITY_PANE,
+    });
   } catch (error) {
     log(`macos permissions nudge failed: ${error}`);
   }

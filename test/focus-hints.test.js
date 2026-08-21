@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { linuxFocusHint, win32FocusHint } from '../src/main/focus-hints.js';
+import { linuxFocusHint, win32FocusHint, hintAnnouncement } from '../src/main/focus-hints.js';
 
 describe('linuxFocusHint', () => {
   it('asks for xdotool when X listing failed', () => {
@@ -120,5 +120,24 @@ describe('win32FocusHint', () => {
     expect(win32FocusHint({ focused: true, tabFound: true, cause: null })).toBeNull();
     expect(win32FocusHint({ focused: false, tabFound: false, cause: 'terminal-not-found' })).toBeNull();
     expect(win32FocusHint({ focused: false, tabFound: false, cause: 'no-windows' })).toBeNull();
+  });
+});
+
+
+// Issue #62: every manager warning must reach the bubble's balloon too, with
+// the actionable body — and never be spoken twice (the balloon adds no speech).
+describe('hintAnnouncement', () => {
+  const hint = { key: 'xdotool', title: 'T', body: 'instala com sudo apt', speech: 'fala' };
+
+  it('builds balloon, notification and speech from one hint', () => {
+    expect(hintAnnouncement(hint)).toEqual({
+      tooltip: { projectName: 'Vizor', text: 'instala com sudo apt', kind: 'hint' },
+      notification: { title: 'T', body: 'instala com sudo apt' },
+      speech: 'fala',
+    });
+  });
+
+  it('is null for a null hint', () => {
+    expect(hintAnnouncement(null)).toBeNull();
   });
 });
