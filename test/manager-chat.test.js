@@ -109,3 +109,26 @@ describe('askManager', () => {
     expect(result.tokensUsed).toBe(0);
   });
 });
+
+
+describe('aliases in the digest and mentions (issue #63)', () => {
+  const aliased = {
+    id: 's1',
+    projectName: 'vizor',
+    displayName: 'API do site',
+    title: null,
+    promptPreview: null,
+    status: 'done',
+    managerMessage: null,
+    updatedAt: 1000,
+  };
+
+  it('the digest introduces the chat by its nickname', () => {
+    expect(buildSessionsDigest([aliased], 61000)).toContain('API do site');
+  });
+
+  it('mentioning the nickname OR the folder name finds the chat', () => {
+    expect(findMentionedSession([aliased], 'como está o API do site?')?.id).toBe('s1');
+    expect(findMentionedSession([aliased], 'e o chat da pasta vizor ali?')?.id).toBe('s1');
+  });
+});

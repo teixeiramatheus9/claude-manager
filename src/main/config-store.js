@@ -22,6 +22,7 @@ export const DEFAULT_CONFIG = {
   autoUpdate: true,
   bridgeAutoSetupDone: false,
   announceWhenFocusUnknown: true,
+  folderAliases: {},
 };
 
 export function loadConfig(file) {
