@@ -362,6 +362,7 @@ function setSettingsOpen(open) {
   if (open) {
     setChatOpen(false);
     setMirrorOpen(null);
+    refreshBridgeSection();
   }
   settingsPop.classList.toggle('hidden', !open);
   sessionsContainer.classList.toggle('hidden', open);
@@ -370,6 +371,48 @@ function setSettingsOpen(open) {
 
 settingsButton.addEventListener('click', () => {
   setSettingsOpen(settingsPop.classList.contains('hidden'));
+});
+
+// --- GNOME bridge (Wayland only): install/uninstall the shell extension ---
+const bridgeSection = document.getElementById('bridge-section');
+const bridgeState = document.getElementById('bridge-state');
+const bridgeInstallButton = document.getElementById('bridge-install');
+const bridgeUninstallButton = document.getElementById('bridge-uninstall');
+
+async function refreshBridgeSection() {
+  try {
+    const status = await window.manager.bridgeStatus();
+    bridgeSection.classList.toggle('hidden', !status.relevant);
+    if (!status.relevant) return;
+    bridgeState.textContent = !status.installed
+      ? '# ponte não instalada'
+      : status.responding
+        ? '# ponte ativa — foco de aba liberado ✓'
+        : '# instalada, mas dormindo — sai e entra da sessão pra ativar';
+    bridgeInstallButton.classList.toggle('hidden', status.installed);
+    bridgeUninstallButton.classList.toggle('hidden', !status.installed);
+  } catch {
+    bridgeSection.classList.add('hidden');
+  }
+}
+
+bridgeInstallButton.addEventListener('click', async () => {
+  bridgeInstallButton.disabled = true;
+  bridgeState.textContent = '# instalando…';
+  try {
+    const result = await window.manager.bridgeInstall();
+    if (result.installed && !result.active && ttsEnabled && !muted) {
+      speakSample('Instalei a ponte! Sai e entra da sessão que aí eu alcanço teu terminal.');
+    }
+  } finally {
+    bridgeInstallButton.disabled = false;
+    await refreshBridgeSection();
+  }
+});
+
+bridgeUninstallButton.addEventListener('click', async () => {
+  await window.manager.bridgeUninstall();
+  await refreshBridgeSection();
 });
 
 // "Configurações" in the tray menu lands straight here.

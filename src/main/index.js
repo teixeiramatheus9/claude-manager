@@ -79,6 +79,8 @@ import {
   AUTOMATION_PANE,
 } from './permissions-darwin.js';
 import { linuxFocusHint, win32FocusHint } from './focus-hints.js';
+import { resolveWindowDriver } from './window-driver.js';
+import { installBridge, uninstallBridge, bridgeStatus, autoSetupBridge } from './bridge-manager.js';
 import { sendUserMessage } from './cc-peer.js';
 
 // Two window-management modes:
@@ -106,6 +108,59 @@ const displayMode =
           sessionType: process.env.XDG_SESSION_TYPE,
         });
 const canPositionWindows = displayMode.managed;
+
+// Which window backend the hunt gets: xdotool on X11, the Vizor Bridge on
+// Wayland when it answers. Cached briefly so a click never pays two probes.
+let cachedDriver = null;
+let cachedDriverAt = 0;
+
+// The bridge is part of the app, so the first boot on a Wayland session sets
+// it up by itself and the manager announces what happened. Removing it in the
+// settings is an opt-out: auto-setup runs once per user, never again.
+function autoSetupBridgeOnWayland() {
+  if (process.platform !== 'linux' || displayMode.canInjectInput) return;
+  autoSetupBridge({
+    done: managerConfig.bridgeAutoSetupDone,
+    markDone: () => {
+      managerConfig = { ...managerConfig, bridgeAutoSetupDone: true };
+      saveConfig(configFile, managerConfig);
+    },
+  })
+    .then((result) => {
+      cachedDriver = null; // pick the bridge up on the next focus click
+      if (!result.ran) return;
+      speakAsManager(
+        result.active
+          ? 'Instalei a ponte do GNOME! Agora eu te levo direto pra aba do teu chat.'
+          : 'Instalei a ponte do GNOME! Sai e entra da sessão que aí eu alcanço teu terminal.',
+      );
+      sendToRenderer('tooltip', {
+        projectName: 'Vizor',
+        text: result.active
+          ? 'Ponte do GNOME instalada e ativa — foco de aba liberado.'
+          : 'Ponte do GNOME instalada — sai e entra da sessão pra ativar.',
+        kind: 'done',
+      });
+      showTooltip();
+    })
+    .catch((error) => log(`bridge auto-setup failed: ${error}`));
+}
+
+// 'none' | 'asleep' | 'active' — the hint pipeline says different things for
+// "install the bridge", "relogin to wake it" and "it works, terminal is gone".
+async function bridgeStateForHints() {
+  if (displayMode.canInjectInput) return 'none'; // X11: hints never look at it
+  const status = await bridgeStatus();
+  if (!status.installed) return 'none';
+  return status.responding ? 'active' : 'asleep';
+}
+async function windowDriver() {
+  if (!cachedDriver || Date.now() - cachedDriverAt > 30_000) {
+    cachedDriver = await resolveWindowDriver({ canInjectInput: displayMode.canInjectInput });
+    cachedDriverAt = Date.now();
+  }
+  return cachedDriver;
+}
 
 // The AppImage launcher drops build.linux.executableArgs, so a packaged run can
 // arrive here without the switch and silently lose the overlay. Relaunch once
@@ -786,6 +841,21 @@ ipcMain.handle('sessions:rescan', () => {
 
 ipcMain.on('update:apply', applyUpdate);
 
+ipcMain.handle('bridge:status', async () => ({
+  ...(await bridgeStatus()),
+  relevant: process.platform === 'linux' && !displayMode.canInjectInput,
+}));
+ipcMain.handle('bridge:install', async () => {
+  const result = await installBridge();
+  cachedDriver = null; // re-resolve on the next focus click
+  return result;
+});
+ipcMain.handle('bridge:uninstall', async () => {
+  await uninstallBridge();
+  cachedDriver = null;
+  return {};
+});
+
 ipcMain.handle('update:check', async () => {
   const status = await (updaterHandle.check?.() ?? updateStatus);
   return { ...status, currentVersion: app.getVersion() };
@@ -1029,6 +1099,7 @@ async function huntSessionTab(session) {
   const result = await terminal.focusChatTab(await sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
+    driver: (await windowDriver()).driver,
     ...sessionFocusTarget(session),
   });
   log(`focus ${session?.id?.slice(0, 8)} in ${Date.now() - startedAt}ms: ${JSON.stringify(result)}`);
@@ -1036,7 +1107,10 @@ async function huntSessionTab(session) {
     if (process.platform === 'darwin') nudgeMacosPermissions();
     else if (process.platform === 'linux')
       nudgeFocusPrereqs(
-        linuxFocusHint(result, session?.term, { canInjectInput: displayMode.canInjectInput }),
+        linuxFocusHint(result, session?.term, {
+          canInjectInput: displayMode.canInjectInput,
+          bridge: await bridgeStateForHints(),
+        }),
         'linux',
       );
     else if (process.platform === 'win32') nudgeFocusPrereqs(win32FocusHint(result), 'win32');
@@ -1092,6 +1166,7 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const result = await terminal.answerQuestionInWarp(await sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
+    driver: (await windowDriver()).driver,
     ...sessionFocusTarget(session),
   });
   if (result === 'answered') registry.markAnswered(sessionId);
@@ -1119,6 +1194,7 @@ async function replyToSession(session, text) {
     writeClipboard: (value) => clipboard.writeText(value),
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
+    driver: (await windowDriver()).driver,
     ...sessionFocusTarget(session),
   });
 }
@@ -1322,6 +1398,7 @@ app.whenReady().then(() => {
   announceUpdateIfJustInstalled();
   renewMacosGrantAfterUpdate();
   ensureHooksInstalled();
+  autoSetupBridgeOnWayland();
   hydrateRegistry();
   reapDeadSessions();
   createWindows();

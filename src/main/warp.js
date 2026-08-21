@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { selectExactTab, VIA_APP_HINTS } from './terminal-target.js';
+import { listTerminalWindows, selectTab } from './gnome-terminal-dbus.js';
 
 const execFileAsync = promisify(execFile);
 const REPLY_TYPE_DELAY_MS = 350;
@@ -85,6 +86,27 @@ export async function listWindows({ execFn = execFileAsync } = {}) {
   return windows;
 }
 
+// Local default driver: same verbs as window-driver's xdotoolDriver, built
+// here to avoid a module cycle (window-driver imports listWindows from us).
+function defaultDriver(execFn) {
+  return {
+    listWindows: () => listWindows({ execFn }),
+    activate: async (id) => {
+      await execFn('xdotool', ['windowactivate', id]);
+    },
+    getTitle: async (id) => {
+      const { stdout } = await execFn('xdotool', ['getwindowname', id]);
+      return String(stdout ?? '').trim();
+    },
+    pressKey: async (combo) => {
+      await execFn('xdotool', ['key', '--clearmodifiers', combo]);
+    },
+    typeText: async (text) => {
+      await execFn('xdotool', ['type', '--clearmodifiers', '--delay', '25', '--', text]);
+    },
+  };
+}
+
 // User-selectable terminal apps. classHint filters windows by WM_CLASS;
 // nextTabKey is each app's default "next tab" keystroke (xdotool syntax);
 // hasTabs=false skips tab hunting entirely.
@@ -96,6 +118,8 @@ export const TERMINALS = {
     classHint: 'gnome-terminal',
     nextTabKey: 'ctrl+Next',
     hasTabs: true,
+    // tabs also switch through the window's own org.gtk.Actions — no keys
+    dbusTabs: true,
   },
   kgx: { label: 'GNOME Console', classHint: 'kgx', nextTabKey: 'ctrl+Next', hasTabs: true },
   ptyxis: {
@@ -208,8 +232,10 @@ export async function focusChatTab(
     allowInputInjection = true,
     term,
     openUrl,
+    driver,
   } = {},
 ) {
+  const drv = driver ?? defaultDriver(execFn);
   try {
     const spec = terminalSpec(terminal);
     if (spec.summon) {
@@ -228,13 +254,13 @@ export async function focusChatTab(
     // unknown, so the title hunt below still decides which window to raise.
     const exact = await selectExactTab(term, { execFn, openUrl });
     const exactClassHint = exact.selected ? VIA_APP_HINTS[exact.via]?.classHint : null;
-    const allWindows = await listWindows({ execFn });
+    const allWindows = await drv.listWindows();
     if (exactClassHint) {
       const exactWindow = allWindows.find((window) =>
         window.wmClass.toLowerCase().includes(exactClassHint),
       );
       if (exactWindow) {
-        await execFn('xdotool', ['windowactivate', exactWindow.id]);
+        await drv.activate(exactWindow.id);
         return { focused: true, tabFound: true, matchedTitle: exactWindow.title, cause: null };
       }
     }
@@ -257,30 +283,48 @@ export async function focusChatTab(
     const directMatches = windows.filter((window) => matches(window.title));
     const direct = directMatches.find(isPreferred) ?? directMatches[0];
     if (direct) {
-      await execFn('xdotool', ['windowactivate', direct.id]);
+      await drv.activate(direct.id);
       return { focused: true, tabFound: true, matchedTitle: direct.title, cause: null };
     }
 
-    const getTitle = async (id) => {
-      const result = await execFn('xdotool', ['getwindowname', id]);
-      return String(result.stdout ?? '').trim();
-    };
+    // GNOME Terminal switches tabs through its own D-Bus action: zero
+    // keystrokes, so it may run regardless of the injection policy — on
+    // Wayland-without-bridge the driver simply sees no terminal window and
+    // this falls through to the plain window raise below.
+    if (spec.dbusTabs) {
+      for (const windowPath of await listTerminalWindows({ execFn })) {
+        for (let index = 0; index < maxTabs; index++) {
+          if (!(await selectTab({ execFn }, windowPath, index))) break; // wrapped
+          await sleep(delayMs);
+          const fresh = await drv.listWindows();
+          const hit = fresh.find(
+            (window) =>
+              window.wmClass.toLowerCase().includes(spec.classHint) && matches(window.title),
+          );
+          if (hit) {
+            await drv.activate(hit.id);
+            return { focused: true, tabFound: true, matchedTitle: hit.title, cause: null };
+          }
+        }
+      }
+    }
 
-    // Cycling tabs means pressing keys, which is XTEST. On Wayland that both
-    // prompts the user for remote access and silently fails, so it is skipped
-    // and the caller settles for focusing the right window.
-    if (allowInputInjection && spec.hasTabs && spec.nextTabKey) {
+    // Cycling tabs means pressing keys. The default driver is XTEST — refused
+    // on Wayland, where it also prompts for remote access, so it is skipped —
+    // but an injected driver (the bridge) is the sanctioned way to press keys
+    // there and always may.
+    if ((allowInputInjection || driver) && spec.hasTabs && spec.nextTabKey) {
       for (const candidate of windows.filter(isPreferred)) {
-        await execFn('xdotool', ['windowactivate', candidate.id]);
+        await drv.activate(candidate.id);
         await sleep(delayMs);
-        const initialTitle = await getTitle(candidate.id);
+        const initialTitle = await drv.getTitle(candidate.id);
         if (matches(initialTitle)) {
           return { focused: true, tabFound: true, matchedTitle: initialTitle, cause: null };
         }
         for (let press = 0; press < maxTabs; press++) {
-          await execFn('xdotool', ['key', '--clearmodifiers', spec.nextTabKey]);
+          await drv.pressKey(spec.nextTabKey);
           await sleep(delayMs);
-          const title = await getTitle(candidate.id);
+          const title = await drv.getTitle(candidate.id);
           if (matches(title)) {
             return { focused: true, tabFound: true, matchedTitle: title, cause: null };
           }
@@ -291,7 +335,7 @@ export async function focusChatTab(
 
     const anyPreferred = windows.find(isPreferred);
     if (anyPreferred) {
-      await execFn('xdotool', ['windowactivate', anyPreferred.id]);
+      await drv.activate(anyPreferred.id);
       return { focused: true, tabFound: false, matchedTitle: null, cause: null };
     }
     return { focused: false, tabFound: false, matchedTitle: null, cause: 'terminal-not-in-x' };
@@ -313,8 +357,10 @@ export async function answerQuestionInWarp(
     allowInputInjection = true,
     term,
     openUrl,
+    driver,
   } = {},
 ) {
+  const drv = driver ?? defaultDriver(execFn);
   const { focused, tabFound } = await focusChatTab(searchKeys, {
     execFn,
     delayMs,
@@ -322,17 +368,18 @@ export async function answerQuestionInWarp(
     allowInputInjection,
     term,
     openUrl,
+    driver,
   });
   // The terminal is focused either way, so the user can answer by hand.
-  if (!allowInputInjection) return 'needs-terminal';
+  if (!allowInputInjection && !driver) return 'needs-terminal';
   if (!focused || !tabFound) return 'not-found';
   try {
     await sleep(delayMs);
     for (let press = 0; press < optionIndex; press++) {
-      await execFn('xdotool', ['key', '--clearmodifiers', 'Down']);
+      await drv.pressKey('Down');
       await sleep(delayMs / 4);
     }
-    await execFn('xdotool', ['key', '--clearmodifiers', 'Return']);
+    await drv.pressKey('Return');
     return 'answered';
   } catch {
     return 'failed';
@@ -358,8 +405,10 @@ export async function sendReplyToWarp(
     allowInputInjection = true,
     term,
     openUrl,
+    driver,
   } = {},
 ) {
+  const drv = driver ?? defaultDriver(execFn);
   const clipboardFallback = () => {
     try {
       writeClipboard(text);
@@ -376,17 +425,19 @@ export async function sendReplyToWarp(
     allowInputInjection,
     term,
     openUrl,
+    driver,
   });
   if (!focused) return clipboardFallback();
-  // Typing is XTEST: refused on Wayland, so the reply goes to the clipboard
-  // with the terminal already focused and waiting for a paste.
-  if (!allowInputInjection) return clipboardFallback();
+  // Typing through the default driver is XTEST: refused on Wayland, so the
+  // reply goes to the clipboard with the terminal already focused and waiting
+  // for a paste. An injected driver (the bridge) types fine there.
+  if (!allowInputInjection && !driver) return clipboardFallback();
 
   try {
     // Give the window manager a beat to actually move focus before typing.
     await new Promise((resolve) => setTimeout(resolve, delayMs));
-    await execFn('xdotool', ['type', '--clearmodifiers', '--delay', '25', '--', text]);
-    await execFn('xdotool', ['key', 'Return']);
+    await drv.typeText(text);
+    await drv.pressKey('Return');
     return 'typed';
   } catch {
     return clipboardFallback();
