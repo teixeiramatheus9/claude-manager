@@ -485,15 +485,28 @@ function applyBounds(win, bounds) {
   }
 }
 
+// Windows cross-fades a window in on show(), and on a transparent window the
+// half-blended frames read as a blink (frame capture shows the desktop
+// bleeding through the panel). Forcing the layered alpha through 0 and back
+// in the same tick makes DWM drop that transition — the window pops in whole.
+function showWithoutFlash(win, { focus = false } = {}) {
+  const wasHidden = !win.isVisible();
+  if (wasHidden) win.setOpacity(0);
+  if (focus) win.show();
+  else win.showInactive();
+  if (wasHidden) win.setOpacity(1);
+}
+
 function showOverlay(mode, { focus = false } = {}) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   overlayMode = mode;
   applyZoom(overlayWindow, mode === 'panel' ? panelScale() : 1);
   applyBounds(overlayWindow, overlayBounds(mode));
   overlayWindow.webContents.send('overlay:mode', mode);
-  if (focus) overlayWindow.show();
-  else overlayWindow.showInactive();
-  overlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  showWithoutFlash(overlayWindow, { focus });
+  // Re-asserting an already-set topmost flag still round-trips through
+  // SetWindowPos and can blink the window — only touch it when it dropped.
+  if (!overlayWindow.isAlwaysOnTop()) overlayWindow.setAlwaysOnTop(true, 'screen-saver');
 }
 
 function hideOverlay() {
@@ -566,15 +579,23 @@ function openSettingsWindow() {
   // Every open recenters — a drag holds only while the window stays up.
   // Already visible means a live scale change: resize in place instead.
   if (canPositionWindows) {
-    if (settingsVisible()) {
-      const { width, height } = settingsBounds();
-      settingsWindow.setSize(width, height);
-    } else {
-      applyBounds(settingsWindow, settingsBounds());
-    }
+    if (settingsVisible()) resizeSettingsInPlace();
+    else applyBounds(settingsWindow, settingsBounds());
   }
-  settingsWindow.show();
-  settingsWindow.setAlwaysOnTop(true, 'screen-saver');
+  showWithoutFlash(settingsWindow, { focus: true });
+  if (!settingsWindow.isAlwaysOnTop()) settingsWindow.setAlwaysOnTop(true, 'screen-saver');
+}
+
+// A visible non-resizable window swallows programmatic resizes on Windows
+// (hidden ones take them, which is why reopening used to fix the size) —
+// resizable flips on just for the operation.
+function resizeSettingsInPlace() {
+  const { width, height } = settingsBounds();
+  const wasResizable = settingsWindow.isResizable();
+  if (!wasResizable) settingsWindow.setResizable(true);
+  const { x, y } = settingsWindow.getBounds();
+  settingsWindow.setBounds({ x, y, width, height });
+  if (!wasResizable) settingsWindow.setResizable(false);
 }
 
 function closeSettingsWindow({ refocusPanel = false } = {}) {
@@ -855,7 +876,10 @@ const windowOptions = {
   alwaysOnTop: true,
   skipTaskbar: true,
   hasShadow: false,
-  webPreferences: { preload: preloadPath, contextIsolation: true },
+  // backgroundThrottling: false — a hidden window otherwise gets its
+  // compositing suspended, and show() flashes an empty frame before the
+  // renderer wakes up (most visible on Windows with transparent windows).
+  webPreferences: { preload: preloadPath, contextIsolation: true, backgroundThrottling: false },
 };
 
 // visibleOnFullScreen turns the app into an accessory on macOS (no dock
