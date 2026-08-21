@@ -153,7 +153,7 @@ const lastAnnouncements = new Map(); // sessionId → { text, at }
 
 // Nickname resolution (issue #63): what the manager shows and speaks. The tab
 // hunt keeps using cwd/projectName — the alias is display/speech only.
-const displayNameOf = (session) => displayName(session, managerConfig.folderAliases);
+const displayNameOf = (session) => displayName(session);
 
 const listWithDisplayNames = () =>
   registry.list().map((session) => ({ ...session, displayName: displayNameOf(session) }));
@@ -272,7 +272,9 @@ migrateLegacyInstall({
   log,
 });
 
-const registry = new SessionRegistry();
+const registry = new SessionRegistry({
+  folderAliasFor: (cwd) => managerConfig.folderAliases[cwd] ?? null,
+});
 let managerConfig = loadConfig(configFile);
 const tokenBudget = new TokenBudget({ file: usageFile });
 const isEconomyMode = () => tokenBudget.isExceeded(managerConfig.tokenBudgetDaily);

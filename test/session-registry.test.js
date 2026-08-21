@@ -383,13 +383,43 @@ describe('aliases', () => {
 });
 
 describe('displayName', () => {
-  it('prefers the session alias, then the folder default, then the basename', () => {
-    const session = { alias: null, cwd: '/h/web', projectName: 'web' };
-    expect(displayName(session, {})).toBe('web');
-    expect(displayName(session, { '/h/web': 'API do site' })).toBe('API do site');
-    expect(displayName({ ...session, alias: 'front novo' }, { '/h/web': 'API do site' })).toBe(
-      'front novo',
-    );
+  it('is the session own alias, else the basename — never a folder-wide name', () => {
+    expect(displayName({ alias: null, projectName: 'web' })).toBe('web');
+    expect(displayName({ alias: 'front novo', projectName: 'web' })).toBe('front novo');
+  });
+});
+
+// Renaming chat A must NEVER rename its sibling B in the same folder — that
+// was the whole point of issue #63. The folder default only names NEWBORN
+// sessions (materialized as their own alias at creation, renameable after).
+describe('folder default aliases', () => {
+  const stop = (id) => ({ hook_event_name: 'Stop', session_id: id, cwd: '/h/vizor' });
+
+  it('a newborn session is baptized with the folder default as its own alias', () => {
+    const registry = new SessionRegistry({ folderAliasFor: () => 'Vizor terminal' });
+    registry.applyEvent(stop('novo'));
+    expect(registry.sessions.get('novo').alias).toBe('Vizor terminal');
+  });
+
+  it('renaming one chat never touches its sibling in the same folder', () => {
+    const aliases = {};
+    const registry = new SessionRegistry({ folderAliasFor: (cwd) => aliases[cwd] });
+    registry.applyEvent(stop('a'));
+    registry.applyEvent(stop('b'));
+    registry.setAlias('a', 'Vizor terminal');
+    aliases['/h/vizor'] = 'Vizor terminal'; // what the rename IPC persists
+    registry.applyEvent(stop('b')); // more events on the sibling
+    expect(displayName(registry.sessions.get('a'))).toBe('Vizor terminal');
+    expect(displayName(registry.sessions.get('b'))).toBe('vizor');
+  });
+
+  it('a session already known never gets re-baptized by the folder default', () => {
+    const aliases = {};
+    const registry = new SessionRegistry({ folderAliasFor: (cwd) => aliases[cwd] });
+    registry.applyEvent(stop('velho'));
+    aliases['/h/vizor'] = 'nome novo';
+    registry.applyEvent(stop('velho'));
+    expect(registry.sessions.get('velho').alias).toBeNull();
   });
 });
 
