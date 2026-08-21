@@ -48,6 +48,8 @@ export class SessionRegistry extends EventEmitter {
       wave: null,
       term: null,
       seenAlive: false,
+      alias: null,
+      needsPermission: false,
     };
     if (event.wave?.blockId) session.wave = event.wave;
     if (event.term && typeof event.term === 'object' && Object.keys(event.term).length) {
@@ -66,6 +68,7 @@ export class SessionRegistry extends EventEmitter {
       session.managerMessage = null;
       session.lastMessage = null;
       session.question = null;
+      session.needsPermission = false;
       if (!session.promptPreview && typeof event.prompt === 'string' && event.prompt.trim()) {
         const preview = event.prompt.trim();
         session.promptPreview = preview.length > 60 ? `${preview.slice(0, 60)}…` : preview;
@@ -73,9 +76,13 @@ export class SessionRegistry extends EventEmitter {
     } else if (eventName === 'Stop') {
       session.status = STATUS.DONE;
       session.unread = true;
+      session.needsPermission = false;
     } else {
       session.status = STATUS.WAITING;
       session.unread = true;
+      // The caller flags permission asks before humanizing the message —
+      // the raw "permission to use X" is gone by the time it lands here.
+      session.needsPermission = Boolean(event.permissionAsk);
       session.managerMessage = event.message ?? 'Esperando você dar uma olhada.';
     }
 
@@ -209,6 +216,15 @@ export class SessionRegistry extends EventEmitter {
     if (changed) this.emit('change');
   }
 
+  // A nickname is display-only: projectName keeps feeding the tab hunt, and
+  // applyEvent recomputing it from cwd never touches the alias.
+  setAlias(sessionId, alias) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.alias = String(alias ?? '').trim() || null;
+    this.emit('change');
+  }
+
   serialize() {
     return [...this.sessions.values()];
   }
@@ -227,4 +243,24 @@ export class SessionRegistry extends EventEmitter {
   list() {
     return [...this.sessions.values()].sort((a, b) => b.updatedAt - a.updatedAt);
   }
+}
+
+// What the manager shows and speaks for a session: the chat's own nickname,
+// else the folder's default nickname, else the plain basename.
+export function displayName(session, folderAliases = {}) {
+  return session?.alias ?? folderAliases[session?.cwd] ?? session?.projectName;
+}
+
+// Which wave the bubble should emit: the most urgent unread state across all
+// sessions — a permission ask blocks work (red), a question waits on the user
+// (yellow), a finished task is news (green). null = no waves.
+export function haloState(sessions) {
+  let state = null;
+  for (const session of sessions) {
+    if (!session.unread) continue;
+    if (session.needsPermission) return 'permission';
+    if (session.question || session.status === STATUS.WAITING) state = 'question';
+    else if (session.status === STATUS.DONE && state === null) state = 'done';
+  }
+  return state;
 }

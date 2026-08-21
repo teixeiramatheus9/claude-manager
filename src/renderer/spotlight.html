@@ -34,6 +34,12 @@
           opacity: 0;
         }
       }
+      /* The window stays permanently mapped (remapping races the X input
+         region empty/full on Electron 42); the rings only exist when a mode
+         class is on — no class, nothing painted. */
+      body:not(.gentle):not(.flash) .ring {
+        display: none;
+      }
       .ring {
         position: absolute;
         inset: 26px;
@@ -51,6 +57,31 @@
       }
       .ring:nth-child(3) {
         animation-delay: 0.76s;
+      }
+      /* Gentle mode: the notification waves — slower emission, softer glow,
+         one ring fewer. Runs for as long as a chat waits unseen. */
+      @keyframes sonar-gentle {
+        0% {
+          transform: scale(0.3);
+          opacity: 0.55;
+        }
+        100% {
+          transform: scale(0.82);
+          opacity: 0;
+        }
+      }
+      body.gentle .ring {
+        animation: sonar-gentle 2.6s ease-out infinite;
+        border-width: 1.5px;
+        box-shadow:
+          0 0 12px 1px var(--ring, #e7edf3),
+          inset 0 0 6px var(--ring, #e7edf3);
+      }
+      body.gentle .ring:nth-child(2) {
+        animation-delay: 1.3s;
+      }
+      body.gentle .ring:nth-child(3) {
+        display: none;
       }
     </style>
   </head>

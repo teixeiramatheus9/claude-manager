@@ -18,10 +18,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildHookCommand, ensureHooks, removeAppHooks } from '../../scripts/install-hooks.js';
-import { SessionRegistry } from './session-registry.js';
+import { SessionRegistry, displayName, haloState } from './session-registry.js';
 import { startSocketServer, stopSocketServer } from './socket-server.js';
 import { readAiTitle, readConversationTail, readTranscriptSnapshot } from './transcript.js';
-import { generateManagerMessage, humanizeNotification } from './manager-voice.js';
+import { generateManagerMessage, humanizeNotification, isPermissionAsk } from './manager-voice.js';
 import { digestMessage } from './message-digest.js';
 import { askManager, findMentionedSession } from './manager-chat.js';
 import { fallbackMessage } from './manager-voice.js';
@@ -78,7 +78,10 @@ import {
   ACCESSIBILITY_PANE,
   AUTOMATION_PANE,
 } from './permissions-darwin.js';
-import { linuxFocusHint, win32FocusHint } from './focus-hints.js';
+import { linuxFocusHint, win32FocusHint, hintAnnouncement } from './focus-hints.js';
+import { resolveWindowDriver } from './window-driver.js';
+import { shouldAnnounce as notifyPolicy } from './notify-policy.js';
+import { installBridge, uninstallBridge, bridgeStatus, autoSetupBridge } from './bridge-manager.js';
 import { sendUserMessage } from './cc-peer.js';
 
 // Two window-management modes:
@@ -106,6 +109,100 @@ const displayMode =
           sessionType: process.env.XDG_SESSION_TYPE,
         });
 const canPositionWindows = displayMode.managed;
+
+// Which window backend the hunt gets: xdotool on X11, the Vizor Bridge on
+// Wayland when it answers. Cached briefly so a click never pays two probes.
+let cachedDriver = null;
+let cachedDriverAt = 0;
+
+// The bridge is part of the app, so the first boot on a Wayland session sets
+// it up by itself and the manager announces what happened. Removing it in the
+// settings is an opt-out: auto-setup runs once per user, never again.
+function autoSetupBridgeOnWayland() {
+  if (process.platform !== 'linux' || displayMode.canInjectInput) return;
+  autoSetupBridge({
+    done: managerConfig.bridgeAutoSetupDone,
+    markDone: () => {
+      managerConfig = { ...managerConfig, bridgeAutoSetupDone: true };
+      saveConfig(configFile, managerConfig);
+    },
+  })
+    .then((result) => {
+      cachedDriver = null; // pick the bridge up on the next focus click
+      if (!result.ran) return;
+      speakAsManager(
+        result.active
+          ? 'Instalei a ponte do GNOME! Agora eu te levo direto pra aba do teu chat.'
+          : 'Instalei a ponte do GNOME! Sai e entra da sessão que aí eu alcanço teu terminal.',
+      );
+      sendToRenderer('tooltip', {
+        projectName: 'Vizor',
+        text: result.active
+          ? 'Ponte do GNOME instalada e ativa — foco de aba liberado.'
+          : 'Ponte do GNOME instalada — sai e entra da sessão pra ativar.',
+        kind: 'done',
+      });
+      showTooltip();
+    })
+    .catch((error) => log(`bridge auto-setup failed: ${error}`));
+}
+
+// Bark or stay silent (issue #66): the card always updates, but chime, voice
+// and balloon only fire when the user is NOT already looking at that chat.
+const lastAnnouncements = new Map(); // sessionId → { text, at }
+
+// Nickname resolution (issue #63): what the manager shows and speaks. The tab
+// hunt keeps using cwd/projectName — the alias is display/speech only.
+const displayNameOf = (session) => displayName(session, managerConfig.folderAliases);
+
+const listWithDisplayNames = () =>
+  registry.list().map((session) => ({ ...session, displayName: displayNameOf(session) }));
+
+async function sessionFocused(session) {
+  if (process.platform !== 'linux') return null; // V1: no probe elsewhere
+  try {
+    const { driver } = await windowDriver();
+    const active = await driver.activeWindow?.();
+    if (!active) return null;
+    if (!terminal.isTerminalWindow(active)) return false;
+    return terminal.titleMatchesKeys(active.title, await sessionSearchKeys(session));
+  } catch {
+    return null;
+  }
+}
+
+async function allowAnnouncement(session, kind, text) {
+  const decision = notifyPolicy({
+    kind,
+    text,
+    focused: await sessionFocused(session),
+    lastAnnouncement: lastAnnouncements.get(session.id) ?? null,
+    announceWhenUnknown: managerConfig.announceWhenFocusUnknown,
+    now: Date.now(),
+  });
+  if (decision.announce) {
+    lastAnnouncements.set(session.id, { text, at: Date.now() });
+  } else {
+    log(`announcement suppressed (${decision.reason}) for ${session.id?.slice(0, 8)}`);
+  }
+  return decision.announce;
+}
+
+// 'none' | 'asleep' | 'active' — the hint pipeline says different things for
+// "install the bridge", "relogin to wake it" and "it works, terminal is gone".
+async function bridgeStateForHints() {
+  if (displayMode.canInjectInput) return 'none'; // X11: hints never look at it
+  const status = await bridgeStatus();
+  if (!status.installed) return 'none';
+  return status.responding ? 'active' : 'asleep';
+}
+async function windowDriver() {
+  if (!cachedDriver || Date.now() - cachedDriverAt > 30_000) {
+    cachedDriver = await resolveWindowDriver({ canInjectInput: displayMode.canInjectInput });
+    cachedDriverAt = Date.now();
+  }
+  return cachedDriver;
+}
 
 // The AppImage launcher drops build.linux.executableArgs, so a packaged run can
 // arrive here without the switch and silently lose the overlay. Relaunch once
@@ -226,9 +323,10 @@ let announcedUpdateVersion = null;
 
 function sendState() {
   sendToRenderer('state', {
-    sessions: registry.list(),
+    sessions: listWithDisplayNames(),
     unread: registry.unreadCount(),
     update: updateStatus,
+    hint: lastHint,
     voiceDownloading: tts.downloadingVoice(),
     theme: managerConfig.theme,
     palette: managerConfig.palette,
@@ -238,6 +336,7 @@ function sendState() {
     shortcuts: { values: managerConfig.shortcuts, failed: shortcutFailures },
     autostart: autostartEnabled(),
     autoUpdate: managerConfig.autoUpdate,
+    announceWhenFocusUnknown: managerConfig.announceWhenFocusUnknown,
     sound: {
       muted: managerConfig.muted,
       volume: managerConfig.soundVolume,
@@ -367,16 +466,34 @@ const JUST_CLOSED_MS = 150;
 // opens; without this settle window the panel would blur itself shut.
 const SETTLE_MS = 500;
 
+// Re-applying zoom or bounds that did not change still makes Chromium drop
+// and reallocate the window's frame, and show() then flashes an unpainted
+// frame before the content lands — so both only run on a real change.
+function applyZoom(win, factor) {
+  if (win.webContents.getZoomFactor() !== factor) win.webContents.setZoomFactor(factor);
+}
+
+function applyBounds(win, bounds) {
+  const current = win.getBounds();
+  if (
+    current.x !== bounds.x ||
+    current.y !== bounds.y ||
+    current.width !== bounds.width ||
+    current.height !== bounds.height
+  ) {
+    win.setBounds(bounds);
+  }
+}
+
 function showOverlay(mode, { focus = false } = {}) {
   if (!overlayWindow || overlayWindow.isDestroyed()) return;
   overlayMode = mode;
-  overlayWindow.webContents.setZoomFactor(mode === 'panel' ? panelScale() : 1);
-  overlayWindow.setBounds(overlayBounds(mode));
+  applyZoom(overlayWindow, mode === 'panel' ? panelScale() : 1);
+  applyBounds(overlayWindow, overlayBounds(mode));
   overlayWindow.webContents.send('overlay:mode', mode);
   if (focus) overlayWindow.show();
   else overlayWindow.showInactive();
   overlayWindow.setAlwaysOnTop(true, 'screen-saver');
-
 }
 
 function hideOverlay() {
@@ -400,6 +517,7 @@ function showTooltip() {
 }
 
 ipcMain.on('overlay:toggle-panel', () => {
+  log('panel toggle requested');
   if (overlayMode === 'panel') {
     // Collapsing on the bubble dismisses the whole ensemble, settings included.
     closeSettingsWindow();
@@ -409,7 +527,10 @@ ipcMain.on('overlay:toggle-panel', () => {
   openPanel();
 });
 ipcMain.on('overlay:open-panel', () => openPanel());
-ipcMain.on('overlay:close', () => hideOverlay());
+ipcMain.on('overlay:close', () => {
+  log('overlay close requested');
+  hideOverlay();
+});
 
 // --- settings window: its own modal, living beside the panel -------------
 // Sized like the panel is: the base box scaled by the same panelScale, with
@@ -441,7 +562,7 @@ function settingsBounds() {
 function openSettingsWindow() {
   if (!settingsWindow || settingsWindow.isDestroyed()) return;
   settingsOpenedAt = Date.now();
-  settingsWindow.webContents.setZoomFactor(panelScale() * SETTINGS_ZOOM);
+  applyZoom(settingsWindow, panelScale() * SETTINGS_ZOOM);
   // Every open recenters — a drag holds only while the window stays up.
   // Already visible means a live scale change: resize in place instead.
   if (canPositionWindows) {
@@ -449,7 +570,7 @@ function openSettingsWindow() {
       const { width, height } = settingsBounds();
       settingsWindow.setSize(width, height);
     } else {
-      settingsWindow.setBounds(settingsBounds());
+      applyBounds(settingsWindow, settingsBounds());
     }
   }
   settingsWindow.show();
@@ -498,28 +619,102 @@ const SPOT_BOX = 220;
 const SPOT_MS = 2400;
 let spotlightTimer = null;
 
+// Notification waves (gentle halo): green = task done, yellow = question or
+// waiting, red = permission ask. Fixed colors on purpose — this is a traffic
+// light, not a theme accent.
+const HALO_COLORS = { done: '#3ecf8e', question: '#e0b341', permission: '#e05561' };
+let haloActive = null;
+// Every halo decision bumps the generation; an async show that awakes to find
+// a newer generation aborts instead of resurrecting a window that a hide (or
+// a newer show) already superseded — the race left ghost rings on screen.
+let haloGeneration = 0;
+
+// The halo sits ON TOP of the bubble (override-redirect, outside the WM):
+// if its input region is not empty the bubble is unclickable. On Electron 42
+// / X11 the empty region is FLAKY across remaps — sometimes it survives a
+// hide/show, sometimes it comes back full. So the window is never remapped
+// once shown (ring visibility is pure CSS), the region is re-asserted after
+// every geometry change, and a 1s guard keeps re-asserting while rings are
+// visible — never trust the one set at creation.
+function presentHaloWindow() {
+  // macOS ghosts when a visible transparent window moves — reposition hidden
+  // there. On Linux it is the OPPOSITE: remapping is what breaks the input
+  // region, so the window moves while mapped.
+  if (process.platform === 'darwin' && spotlightWindow.isVisible()) spotlightWindow.hide();
+  spotlightWindow.setBounds(spotlightBounds(bubbleAnchor, BUBBLE_BOX, SPOT_BOX));
+  if (!spotlightWindow.isVisible()) spotlightWindow.showInactive();
+  spotlightWindow.setIgnoreMouseEvents(true);
+  stayOnTop(spotlightWindow);
+  stayOnTop(mainWindow); // the bubble itself stays above its halo
+}
+
+function setHaloClasses(mode) {
+  const script =
+    mode === ''
+      ? `document.body.classList.remove('gentle', 'flash');`
+      : `document.body.classList.remove('gentle', 'flash');
+         document.body.classList.add(${JSON.stringify(mode)});`;
+  return spotlightWindow.webContents.executeJavaScript(script).catch(() => {});
+}
+
+setInterval(() => {
+  if (spotlightWindow && !spotlightWindow.isDestroyed() && spotlightWindow.isVisible()) {
+    spotlightWindow.setIgnoreMouseEvents(true);
+  }
+}, 1000);
+
+async function showGentleHalo(state, generation) {
+  await spotlightWindow.webContents.executeJavaScript(
+    `document.body.classList.remove('flash');
+     document.body.classList.add('gentle');
+     document.body.style.setProperty('--ring', ${JSON.stringify(HALO_COLORS[state])});`,
+  );
+  if (generation !== haloGeneration) return; // superseded while awaiting
+  presentHaloWindow();
+}
+
+// Keeps the waves in sync with the sessions: called on every registry change
+// and whenever the bubble settles somewhere new. The find-the-bubble flash
+// borrows the window and hands it back through here.
+function updateNotificationHalo() {
+  const state = haloState(registry.list());
+  const positionable = canPositionWindows && Boolean(bubbleAnchor);
+  sendToRenderer('halo', { state: positionable ? null : state });
+  if (spotlightTimer) return; // a find-the-bubble flash is running — after it
+  const wanted = state && positionable ? state : null;
+  if (wanted === haloActive) return; // already waving right — no show churn
+  haloActive = wanted;
+  haloGeneration += 1;
+  if (!spotlightWindow || spotlightWindow.isDestroyed()) return;
+  if (!haloActive) {
+    setHaloClasses(''); // rings off; the window stays mapped (see above)
+    return;
+  }
+  showGentleHalo(haloActive, haloGeneration).catch((error) => log(`halo failed: ${error}`));
+}
+
 // The halo rides in its own click-through window: the bubble window is
 // exactly bubble-sized and clips any glow into a square. The ring colour is
 // read live from the bubble's CSS so every theme keeps its own accent.
 async function flashSpotlight() {
   if (!spotlightWindow || spotlightWindow.isDestroyed() || !bubbleAnchor) return;
   try {
+    haloGeneration += 1; // abort any gentle show still in flight
     const accent = await mainWindow.webContents.executeJavaScript(
       "getComputedStyle(document.body).getPropertyValue('--accent')",
     );
     await spotlightWindow.webContents.executeJavaScript(
-      `document.body.style.setProperty('--ring', ${JSON.stringify(String(accent).trim())})`,
+      `document.body.classList.remove('gentle');
+       document.body.classList.add('flash');
+       document.body.style.setProperty('--ring', ${JSON.stringify(String(accent).trim())})`,
     );
-    // positioned while hidden — resizing/moving a visible transparent window
-    // ghosts on macOS
-    spotlightWindow.hide();
-    spotlightWindow.setBounds(spotlightBounds(bubbleAnchor, BUBBLE_BOX, SPOT_BOX));
-    spotlightWindow.showInactive();
-    stayOnTop(spotlightWindow);
-    stayOnTop(mainWindow); // the bubble itself stays above its halo
+    presentHaloWindow();
+    haloActive = null; // the flash wiped the gentle mode — hand-back re-shows
     clearTimeout(spotlightTimer);
     spotlightTimer = setTimeout(() => {
-      if (spotlightWindow && !spotlightWindow.isDestroyed()) spotlightWindow.hide();
+      spotlightTimer = null;
+      setHaloClasses(''); // rings off, window stays mapped
+      updateNotificationHalo(); // hand the window back to the waves
     }, SPOT_MS);
   } catch (error) {
     log(`spotlight failed: ${error}`);
@@ -818,17 +1013,19 @@ async function generateVoiceForStop(session) {
   registry.setLastMessage(session.id, digestMessage(snapshot.lastAssistantMessage));
   let voice;
   if (isEconomyMode()) {
-    voice = fallbackMessage(session.projectName);
+    voice = fallbackMessage(displayNameOf(session));
   } else {
     voice = await generateManagerMessage({
-      projectName: session.projectName,
+      projectName: displayNameOf(session),
       lastAssistantMessage: snapshot.lastAssistantMessage,
     });
     tokenBudget.add(voice.tokensUsed);
   }
   registry.setManagerMessage(session.id, voice);
-  sendToRenderer('tooltip', { projectName: session.projectName, text: voice.message, kind: 'done' });
-  showTooltip();
+  if (await allowAnnouncement(session, 'done', voice.message)) {
+    sendToRenderer('tooltip', { projectName: displayNameOf(session), text: voice.message, kind: 'done' });
+    showTooltip();
+  }
 }
 
 // The Notification hook often fires BEFORE Claude Code flushes the ask entry
@@ -856,18 +1053,25 @@ async function enrichNotification(session) {
   const text = firstQuestion?.question ?? session.managerMessage;
   if (!text) return;
   if (firstQuestion) registry.setManagerMessage(session.id, { message: text });
-  sendToRenderer('tooltip', {
-    projectName: session.projectName,
-    text,
-    kind: firstQuestion ? 'question' : 'waiting',
-    optionsCount: firstQuestion?.options?.length ?? 0,
-  });
-  showTooltip();
+  const kind = firstQuestion ? 'question' : 'waiting';
+  if (await allowAnnouncement(session, kind, text)) {
+    sendToRenderer('tooltip', {
+      projectName: displayNameOf(session),
+      text,
+      kind,
+      optionsCount: firstQuestion?.options?.length ?? 0,
+    });
+    showTooltip();
+  }
 }
 
 function onHookEvent(event) {
   if (event?.hook_event_name === 'Notification') {
-    event = { ...event, message: humanizeNotification(event.message) };
+    event = {
+      ...event,
+      permissionAsk: isPermissionAsk(event.message),
+      message: humanizeNotification(event.message),
+    };
   }
   const session = registry.applyEvent(event);
   if (!session) return;
@@ -884,6 +1088,24 @@ ipcMain.on('panel:opened', () => registry.markAllRead());
 
 ipcMain.on('session:remove', (_event, sessionId) => registry.remove(sessionId));
 
+// Renaming a chat also becomes the folder's default nickname, so the next
+// chat in that folder is born with it (and can be renamed over). Clearing
+// the alias clears both.
+ipcMain.on('session:rename', (_event, { sessionId, alias }) => {
+  const session = registry.sessions.get(sessionId);
+  if (!session) return;
+  const clean = String(alias ?? '').trim().slice(0, 60);
+  registry.setAlias(sessionId, clean);
+  const folderAliases = { ...managerConfig.folderAliases };
+  if (session.cwd) {
+    if (clean) folderAliases[session.cwd] = clean;
+    else delete folderAliases[session.cwd];
+  }
+  managerConfig = { ...managerConfig, folderAliases };
+  saveConfig(configFile, managerConfig);
+  sendState();
+});
+
 // The panel's rescan: adopt the live interactive chats the hooks never
 // reported — opened before the manager was up, or closed on the ✕.
 ipcMain.handle('sessions:rescan', () => {
@@ -898,6 +1120,21 @@ ipcMain.handle('sessions:rescan', () => {
 });
 
 ipcMain.on('update:apply', applyUpdate);
+
+ipcMain.handle('bridge:status', async () => ({
+  ...(await bridgeStatus()),
+  relevant: process.platform === 'linux' && !displayMode.canInjectInput,
+}));
+ipcMain.handle('bridge:install', async () => {
+  const result = await installBridge();
+  cachedDriver = null; // re-resolve on the next focus click
+  return result;
+});
+ipcMain.handle('bridge:uninstall', async () => {
+  await uninstallBridge();
+  cachedDriver = null;
+  return {};
+});
 
 ipcMain.handle('update:check', async () => {
   const status = await (updaterHandle.check?.() ?? updateStatus);
@@ -927,7 +1164,7 @@ ipcMain.handle('manager:chat', async (_event, rawMessage) => {
   const userMessage = String(rawMessage ?? '').trim().slice(0, 1000);
   if (!userMessage) return '';
   if (isEconomyMode()) return ECONOMY_CHAT_REPLY;
-  const sessions = registry.list();
+  const sessions = listWithDisplayNames();
   const mentioned = findMentionedSession(sessions, userMessage);
   const transcriptExcerpt = mentioned?.transcriptPath
     ? (await readTranscriptSnapshot(mentioned.transcriptPath)).lastAssistantMessage
@@ -968,6 +1205,8 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (Number.isFinite(partial?.panelScale)) allowed.panelScale = clampScale(partial.panelScale);
   if (typeof partial?.crt === 'boolean') allowed.crt = partial.crt;
   if (typeof partial?.autoUpdate === 'boolean') allowed.autoUpdate = partial.autoUpdate;
+  if (typeof partial?.announceWhenFocusUnknown === 'boolean')
+    allowed.announceWhenFocusUnknown = partial.announceWhenFocusUnknown;
   if (typeof partial?.muted === 'boolean') allowed.muted = partial.muted;
   if (typeof partial?.ttsEnabled === 'boolean') allowed.ttsEnabled = partial.ttsEnabled;
   if (typeof partial?.timbre === 'string') allowed.timbre = partial.timbre;
@@ -1060,13 +1299,34 @@ function sessionFocusTarget(session) {
 // notification names the missing piece (xdotool, kitty remote control).
 // Windows: no dialog either — the actionable miss is a terminal hiding its
 // tab titles, or PowerShell being unreachable.
+// The last hint survives the balloon's 8s: the panel keeps it as a banner
+// until the user dismisses it (issue #62 — whoever was away finds it later).
+let lastHint = null;
+
+function announceHint(hint) {
+  const parts = hintAnnouncement(hint);
+  if (!parts) return;
+  lastHint = { key: hint.key, title: hint.title, body: hint.body };
+  sendToRenderer('tooltip', parts.tooltip);
+  showTooltip();
+  const note = new Notification(parts.notification);
+  if (hint.pane) note.on('click', () => shell.openExternal(hint.pane));
+  note.show();
+  speakAsManager(parts.speech);
+  sendState();
+}
+
+ipcMain.on('hint:dismiss', () => {
+  lastHint = null;
+  sendState();
+});
+
 let focusNudgeDone = false;
 function nudgeFocusPrereqs(hint, platform) {
   if (!hint) return; // nothing actionable — stay quiet and keep watching
   focusNudgeDone = true;
   log(`${platform} focus hint: ${hint.key}`);
-  new Notification({ title: hint.title, body: hint.body }).show();
-  speakAsManager(hint.speech);
+  announceHint(hint);
 }
 
 // Ad-hoc signing (issue #58) means every self-update hands macOS a new code
@@ -1085,18 +1345,17 @@ async function renewMacosGrantAfterUpdate() {
       log('macos accessibility lost after update — resetting stale TCC entries');
       await resetAccessibilityEntries('io.github.teixeiramatheus9.vizor');
       systemPreferences.isTrustedAccessibilityClient(true);
-      const note = new Notification({
+      announceHint({
+        key: 'macos-grant-renewed',
         title: 'A atualização renovou minha identidade',
         body:
           'O macOS zerou a permissão de Acessibilidade na atualização. ' +
           'Reative o Vizor lá que volto a te levar pra aba certa.',
-      });
-      note.on('click', () => shell.openExternal(ACCESSIBILITY_PANE));
-      note.show();
-      speakAsManager(
-        'A atualização renovou minha identidade no sistema! Me autoriza de novo ' +
+        speech:
+          'A atualização renovou minha identidade no sistema! Me autoriza de novo ' +
           'lá em acessibilidade que eu volto a te levar direto pra aba do chat.',
-      );
+        pane: ACCESSIBILITY_PANE,
+      });
     }
     writeGrantMemory(grantMemoryFile, { accessible: nowGranted });
   } catch (error) {
@@ -1122,20 +1381,17 @@ async function nudgeMacosPermissions() {
       }
       systemPreferences.isTrustedAccessibilityClient(true);
     }
-    const note = new Notification({
+    announceHint({
+      key: 'macos-permissions',
       title: 'O gerente precisa de uma permissão',
       body:
         'Pra te levar direto pra aba do chat, ative o Vizor em ' +
         'Acessibilidade (e em Automação) na Privacidade e Segurança.',
-    });
-    note.on('click', () => {
-      shell.openExternal(accessible ? AUTOMATION_PANE : ACCESSIBILITY_PANE);
-    });
-    note.show();
-    speakAsManager(
-      'Preciso de uma permissãozinha sua nos ajustes! Libera o acesso pra mim ' +
+      speech:
+        'Preciso de uma permissãozinha sua nos ajustes! Libera o acesso pra mim ' +
         'que aí eu te levo direto pra aba do chat.',
-    );
+      pane: accessible ? AUTOMATION_PANE : ACCESSIBILITY_PANE,
+    });
   } catch (error) {
     log(`macos permissions nudge failed: ${error}`);
   }
@@ -1147,13 +1403,20 @@ async function huntSessionTab(session) {
   const result = await terminal.focusChatTab(await sessionSearchKeys(session), {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
+    driver: (await windowDriver()).driver,
     ...sessionFocusTarget(session),
   });
   log(`focus ${session?.id?.slice(0, 8)} in ${Date.now() - startedAt}ms: ${JSON.stringify(result)}`);
   if (!result.tabFound && !focusNudgeDone) {
     if (process.platform === 'darwin') nudgeMacosPermissions();
     else if (process.platform === 'linux')
-      nudgeFocusPrereqs(linuxFocusHint(result, session?.term), 'linux');
+      nudgeFocusPrereqs(
+        linuxFocusHint(result, session?.term, {
+          canInjectInput: displayMode.canInjectInput,
+          bridge: await bridgeStateForHints(),
+        }),
+        'linux',
+      );
     else if (process.platform === 'win32') nudgeFocusPrereqs(win32FocusHint(result), 'win32');
   }
   if (session?.id) {
@@ -1207,6 +1470,7 @@ ipcMain.handle('warp:answer', async (_event, { sessionId, optionIndex }) => {
   const result = await terminal.answerQuestionInWarp(await sessionSearchKeys(session), index, {
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
+    driver: (await windowDriver()).driver,
     ...sessionFocusTarget(session),
   });
   if (result === 'answered') registry.markAnswered(sessionId);
@@ -1234,6 +1498,7 @@ async function replyToSession(session, text) {
     writeClipboard: (value) => clipboard.writeText(value),
     terminal: managerConfig.terminal,
     allowInputInjection: displayMode.canInjectInput,
+    driver: (await windowDriver()).driver,
     ...sessionFocusTarget(session),
   });
 }
@@ -1249,6 +1514,7 @@ ipcMain.handle('warp:reply', async (_event, { sessionId, text }) => {
 // the bubble; main polls the cursor, moves the window, and tells the
 // renderer when a press was really just a click.
 ipcMain.on('drag:start', () => {
+  if (spotlightWindow && !spotlightWindow.isDestroyed()) setHaloClasses('');
   if (!canPositionWindows || !mainWindow || mainWindow.isDestroyed()) return;
   if (dragState) clearInterval(dragState.timer);
   const startCursor = screen.getCursorScreenPoint();
@@ -1275,9 +1541,14 @@ ipcMain.on('drag:end', () => {
   const wasDragged = dragState.moved;
   dragState = null;
   if (!wasDragged) {
+    // A click does not move the bubble, so the halo needs nothing — touching
+    // it here raced the panel opening. The breadcrumb makes 'the bubble is
+    // dead' reports diagnosable from the log.
+    log('bubble click');
     sendToRenderer('ui:click');
     return;
   }
+  haloActive = null; // force a re-show at the new spot
   const [x, y] = mainWindow.getPosition();
   const center = { x: x + BUBBLE_BOX / 2, y: y + BUBBLE_BOX / 2 };
   const workArea = screen.getDisplayNearestPoint(center).workArea;
@@ -1290,6 +1561,9 @@ ipcMain.on('drag:end', () => {
   persistAnchor();
   // Moving across displays can drop the window behind others.
   stayOnTop(mainWindow);
+  // Only AFTER the anchor above is final: re-showing first left the rings
+  // waving at the OLD spot — a blinking decoy the user then clicks on.
+  updateNotificationHalo();
   if (overlayMode) showOverlay(overlayMode, { focus: overlayMode === 'panel' });
 });
 
@@ -1437,12 +1711,14 @@ app.whenReady().then(() => {
   announceUpdateIfJustInstalled();
   renewMacosGrantAfterUpdate();
   ensureHooksInstalled();
+  autoSetupBridgeOnWayland();
   hydrateRegistry();
   reapDeadSessions();
   createWindows();
   socketServer = startSocketServer(socketPath, onHookEvent, log);
   setupTray();
   registry.on('change', sendState);
+  registry.on('change', updateNotificationHalo);
   registry.on('change', scheduleSessionsSave);
   setInterval(() => registry.prune(), PRUNE_INTERVAL_MS);
   setInterval(reapDeadSessions, LIVENESS_INTERVAL_MS);

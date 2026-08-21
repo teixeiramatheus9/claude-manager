@@ -1,0 +1,8 @@
+{
+  "uuid": "vizor-bridge@vizor.app",
+  "name": "Vizor Bridge",
+  "description": "Ponte do Vizor: acha e foca a janela/aba do seu chat no Wayland.",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "url": "https://github.com/teixeiramatheus9/vizor",
+  "version-name": "1.0"
+}

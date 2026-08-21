@@ -572,6 +572,33 @@
         border-color: var(--accent);
       }
 
+      /* Notification waves, bubble-glow flavor (no positionable halo window):
+         a slow breath in the state's color until the panel is opened. */
+      @keyframes halo-breathe {
+        0%,
+        100% {
+          box-shadow: 0 0 5px 1px var(--halo);
+        }
+        50% {
+          box-shadow: 0 0 16px 5px var(--halo);
+        }
+      }
+      #bubble.halo-done,
+      #bubble.halo-question,
+      #bubble.halo-permission {
+        animation: halo-breathe 2.6s ease-in-out infinite;
+        border-color: var(--halo);
+      }
+      #bubble.halo-done {
+        --halo: #3ecf8e;
+      }
+      #bubble.halo-question {
+        --halo: #e0b341;
+      }
+      #bubble.halo-permission {
+        --halo: #e05561;
+      }
+
       /* --- toast --- */
       #tooltip {
         -webkit-app-region: no-drag;
@@ -711,6 +738,26 @@
       #settings-close:hover {
         color: var(--text);
       }
+      #hint-banner {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        margin: 4px 10px;
+        padding: 5px 8px;
+        font-size: 11px;
+        border: 1px dashed var(--warn, #c9a227);
+        color: var(--warn, #c9a227);
+      }
+      #hint-banner span {
+        flex: 1;
+      }
+      #hint-banner button {
+        background: none;
+        border: none;
+        color: inherit;
+        cursor: pointer;
+        font: inherit;
+      }
       #update-banner {
         -webkit-app-region: no-drag;
         width: 100%;
@@ -794,6 +841,29 @@
       }
       .session.working .time {
         color: var(--accent);
+      }
+      .session-rename,
+      #mirror-rename {
+        background: none;
+        border: none;
+        color: inherit;
+        opacity: 0.5;
+        cursor: pointer;
+        font: inherit;
+        padding: 0 2px;
+      }
+      .session-rename:hover,
+      #mirror-rename:hover {
+        opacity: 1;
+      }
+      .rename-input {
+        font: inherit;
+        color: inherit;
+        background: transparent;
+        border: none;
+        border-bottom: 1px dashed currentColor;
+        outline: none;
+        width: 70%;
       }
       .session.waiting .time,
       .session.question .time {
@@ -1594,11 +1664,16 @@
         <button id="close" title="Fechar">✕</button>
       </header>
       <button id="update-banner" class="hidden"></button>
+      <div id="hint-banner" class="hidden">
+        <span id="hint-banner-text"></span>
+        <button id="hint-banner-close" title="Dispensar aviso">[x]</button>
+      </div>
       <div id="sessions"></div>
       <div id="mirror" class="hidden">
         <div id="mirror-top">
           <button id="mirror-back" title="Voltar pra lista">[&lt; voltar]</button>
           <span id="mirror-title"></span>
+          <button id="mirror-rename" title="Renomear este chat">✎</button>
         </div>
         <div id="mirror-messages"></div>
         <div id="mirror-input-row">
@@ -1671,6 +1746,11 @@
               <span>falar notificações (tts)</span>
               <input id="tts" type="checkbox" /><span class="switch"></span>
               <span id="tts-state">[off]</span>
+            </label>
+            <label class="setting-row wide-label" title="Quando dá pra ver que você já está no terminal do chat, o gerente fica quieto. Isto decide o que fazer quando NÃO dá pra saber.">
+              <span>avisar mesmo sem saber se você está no chat</span>
+              <input id="announce-unknown" type="checkbox" /><span class="switch"></span>
+              <span id="announce-unknown-state">[on]</span>
             </label>
             <div class="setting-subtitle"># volume por tipo</div>
             <label class="setting-row type-row">
@@ -1751,6 +1831,21 @@
               <span class="sel"><select id="voice"></select></span>
             </label>
             <div id="voice-status" class="hidden"></div>
+            <div id="bridge-section" class="hidden">
+              <div class="setting-subtitle"># ponte do gnome (wayland)</div>
+              <div class="setting-hint">
+                no wayland o sistema esconde as janelas dos terminais. a ponte é uma
+                extensãozinha do gnome que devolve ao vizor o poder de te levar
+                direto pra aba do chat — ela se instala sozinha no primeiro boot;
+                remover aqui desliga de vez.
+              </div>
+              <div class="setting-hint" id="bridge-state"></div>
+              <div class="setting-actions">
+                <span class="prompt">❯</span>
+                <button id="bridge-install">[instalar ponte]</button>
+                <button id="bridge-uninstall" class="hidden">[remover ponte]</button>
+              </div>
+            </div>
           </section>
           <section class="settings-section" data-section="resposta">
             <div class="setting-subtitle"># resposta rápida no chat</div>

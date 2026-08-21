@@ -127,6 +127,8 @@ describe('hook-emit', () => {
       ITERM_SESSION_ID: 'w0t2p0:UUID',
       KITTY_WINDOW_ID: '3',
       KITTY_LISTEN_ON: 'unix:/tmp/kitty-sock',
+      GNOME_TERMINAL_SCREEN: '/org/gnome/Terminal/screen/80c10d2e_20ab',
+      GNOME_TERMINAL_SERVICE: ':1.123',
     });
     expect(exitCode).toBe(0);
     expect(JSON.parse(await received)).toEqual({
@@ -135,6 +137,8 @@ describe('hook-emit', () => {
         ITERM_SESSION_ID: 'w0t2p0:UUID',
         KITTY_WINDOW_ID: '3',
         KITTY_LISTEN_ON: 'unix:/tmp/kitty-sock',
+        GNOME_TERMINAL_SCREEN: '/org/gnome/Terminal/screen/80c10d2e_20ab',
+        GNOME_TERMINAL_SERVICE: ':1.123',
       },
     });
   });
