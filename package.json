@@ -83,7 +83,13 @@
       "owner": "teixeiramatheus9",
       "repo": "vizor",
       "releaseType": "draft"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "resources/gnome-extension",
+        "to": "gnome-extension"
+      }
+    ]
   },
   "devDependencies": {
     "electron": "^42.9.3",

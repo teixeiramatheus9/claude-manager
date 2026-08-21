@@ -20,6 +20,9 @@ export const DEFAULT_CONFIG = {
   tokenBudgetDaily: 100000,
   shortcuts: { ...DEFAULT_SHORTCUTS },
   autoUpdate: true,
+  bridgeAutoSetupDone: false,
+  announceWhenFocusUnknown: true,
+  folderAliases: {},
 };
 
 export function loadConfig(file) {

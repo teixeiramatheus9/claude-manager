@@ -68,7 +68,12 @@ Pontos críticos:
   appindicator nunca lê as propriedades e o ícone da bandeja fica no
   placeholder "•••" (`image-loading-symbolic`) pra sempre — em qualquer GNOME
   (Ubuntu/Fedora). Não faça bump pra 43+ sem provar no GNOME que o `gdbus call
-  --dest <unique name> … Properties.Get … Id` do item responde.
+  --dest <unique name> … Properties.Get … Id` do item responde. Segunda razão
+  do pin: no 43+ o `setIgnoreMouseEvents` não esvazia mais a input region no
+  X11 (electron#52456) — a janela do halo/spotlight passa a comer os cliques
+  da bolha. Provado no 42.9.3 que funciona; teste com clique real antes de
+  qualquer bump. E rode `npm ci` se o comportamento de janelas parecer
+  maluco: node_modules dessincronizado do lock já instalou Electron 43 aqui.
 - **Sandbox do Electron no Ubuntu 24+**: `npm start` usa `--no-sandbox`
   (só HTML local). Alternativa com sandbox: ver README.
 

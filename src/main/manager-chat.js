@@ -18,10 +18,14 @@ export function buildSessionsDigest(sessions, now = Date.now()) {
   if (!sessions.length) return 'Nenhuma sessão registrada no momento.';
   return sessions
     .map((session) => {
-      const theme = session.title ?? session.promptPreview ?? session.projectName;
+      const theme = session.title ?? session.promptPreview ?? session.displayName ?? session.projectName;
       const ageMinutes = Math.max(0, Math.round((now - session.updatedAt) / 60000));
       const message = session.managerMessage ? ` — último recado: ${truncate(session.managerMessage, 120)}` : '';
-      return `- [${STATUS_LABEL[session.status] ?? session.status}] "${theme}" (pasta ${session.projectName}, há ${ageMinutes}min)${message}`;
+      const folder =
+        session.displayName && session.displayName !== session.projectName
+          ? `${session.displayName}, pasta ${session.projectName}`
+          : `pasta ${session.projectName}`;
+      return `- [${STATUS_LABEL[session.status] ?? session.status}] "${theme}" (${folder}, há ${ageMinutes}min)${message}`;
     })
     .join('\n');
 }
@@ -31,7 +35,7 @@ export function findMentionedSession(sessions, userMessage) {
   const messageLower = String(userMessage ?? '').toLowerCase();
   return (
     sessions.find((session) => {
-      const candidates = [session.projectName, session.title, session.promptPreview]
+      const candidates = [session.projectName, session.displayName, session.title, session.promptPreview]
         .filter(Boolean)
         .map((value) => value.toLowerCase());
       return candidates.some((candidate) => candidate.length >= 4 && messageLower.includes(candidate));

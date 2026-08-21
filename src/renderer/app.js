@@ -13,7 +13,7 @@ const PATHS = { sessions: '~/.claude/sessions', chat: '~/.claude/chats', config:
 
 function renderHeaderPath() {
   if (mirrorSession) {
-    headerPath.textContent = `~/.claude/sessions/${mirrorSession.projectName}`;
+    headerPath.textContent = `~/.claude/sessions/${mirrorSession.displayName ?? mirrorSession.projectName}`;
     return;
   }
   const view = chatOpen ? 'chat' : settingsPop.classList.contains('hidden') ? 'sessions' : 'config';
@@ -100,6 +100,15 @@ window.manager.onEnv((env) => {
 // Both windows get the broadcast; only the bubble's click may toggle.
 window.manager.onClick(() => {
   if (view === 'bubble') togglePanel();
+});
+
+// Notification waves, bubble-glow flavor: used when the halo window cannot be
+// positioned (Wayland / bubble never placed). Main sends state: null there
+// whenever the ring window is doing the job instead.
+const HALO_CLASSES = ['halo-done', 'halo-question', 'halo-permission'];
+window.manager.onHalo(({ state }) => {
+  for (const klass of HALO_CLASSES) bubble.classList.remove(klass);
+  if (state) bubble.classList.add(`halo-${state}`);
 });
 
 // "Encontrar a bolha": a short pulse so the eye finds the freshly centered
@@ -203,6 +212,7 @@ chatInput.addEventListener('keydown', (event) => {
 const mirrorView = document.getElementById('mirror');
 const mirrorMessages = document.getElementById('mirror-messages');
 const mirrorTitle = document.getElementById('mirror-title');
+const mirrorRename = document.getElementById('mirror-rename');
 const mirrorInput = document.getElementById('mirror-input');
 const mirrorSend = document.getElementById('mirror-send');
 let mirrorSession = null;
@@ -245,7 +255,12 @@ function setMirrorOpen(session) {
   sessionsContainer.classList.toggle('hidden', open);
   if (open) {
     settingsPop.classList.add('hidden');
-    mirrorTitle.textContent = session.title ?? session.promptPreview ?? session.projectName;
+    mirrorTitle.textContent =
+      session.title ?? session.promptPreview ?? session.displayName ?? session.projectName;
+    mirrorRename.onclick = () => {
+      const alias = prompt('Apelido deste chat (vazio limpa):', session.alias ?? '');
+      if (alias !== null) window.manager.renameSession(session.id, alias);
+    };
     mirrorMessages.replaceChildren();
     refreshMirror();
     // The transcript is written by another process, so the mirror polls while
@@ -362,6 +377,7 @@ function setSettingsOpen(open) {
   if (open) {
     setChatOpen(false);
     setMirrorOpen(null);
+    refreshBridgeSection();
   }
   settingsPop.classList.toggle('hidden', !open);
   sessionsContainer.classList.toggle('hidden', open);
@@ -370,6 +386,48 @@ function setSettingsOpen(open) {
 
 settingsButton.addEventListener('click', () => {
   setSettingsOpen(settingsPop.classList.contains('hidden'));
+});
+
+// --- GNOME bridge (Wayland only): install/uninstall the shell extension ---
+const bridgeSection = document.getElementById('bridge-section');
+const bridgeState = document.getElementById('bridge-state');
+const bridgeInstallButton = document.getElementById('bridge-install');
+const bridgeUninstallButton = document.getElementById('bridge-uninstall');
+
+async function refreshBridgeSection() {
+  try {
+    const status = await window.manager.bridgeStatus();
+    bridgeSection.classList.toggle('hidden', !status.relevant);
+    if (!status.relevant) return;
+    bridgeState.textContent = !status.installed
+      ? '# ponte não instalada'
+      : status.responding
+        ? '# ponte ativa — foco de aba liberado ✓'
+        : '# instalada, mas dormindo — sai e entra da sessão pra ativar';
+    bridgeInstallButton.classList.toggle('hidden', status.installed);
+    bridgeUninstallButton.classList.toggle('hidden', !status.installed);
+  } catch {
+    bridgeSection.classList.add('hidden');
+  }
+}
+
+bridgeInstallButton.addEventListener('click', async () => {
+  bridgeInstallButton.disabled = true;
+  bridgeState.textContent = '# instalando…';
+  try {
+    const result = await window.manager.bridgeInstall();
+    if (result.installed && !result.active && ttsEnabled && !muted) {
+      speakSample('Instalei a ponte! Sai e entra da sessão que aí eu alcanço teu terminal.');
+    }
+  } finally {
+    bridgeInstallButton.disabled = false;
+    await refreshBridgeSection();
+  }
+});
+
+bridgeUninstallButton.addEventListener('click', async () => {
+  await window.manager.bridgeUninstall();
+  await refreshBridgeSection();
 });
 
 // "Configurações" in the tray menu lands straight here.
@@ -685,6 +743,19 @@ autoUpdateCheckbox.addEventListener('change', () => {
   applyAutoUpdate(autoUpdateCheckbox.checked);
   window.manager.setConfig({ autoUpdate: autoUpdateCheckbox.checked });
 });
+
+const announceUnknownCheckbox = document.getElementById('announce-unknown');
+const announceUnknownState = document.getElementById('announce-unknown-state');
+
+function applyAnnounceUnknown(on) {
+  announceUnknownCheckbox.checked = Boolean(on);
+  announceUnknownState.textContent = on ? '[on]' : '[off]';
+}
+
+announceUnknownCheckbox.addEventListener('change', () => {
+  applyAnnounceUnknown(announceUnknownCheckbox.checked);
+  window.manager.setConfig({ announceWhenFocusUnknown: announceUnknownCheckbox.checked });
+});
 for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
@@ -831,6 +902,7 @@ const TOAST_TITLE = {
   question: 'pergunta pendente',
   waiting: 'esperando você',
   start: 'início de task',
+  hint: 'aviso do gerente',
 };
 
 document.getElementById('toast-open').addEventListener('click', openPanel);
@@ -840,7 +912,9 @@ document.getElementById('toast-close').addEventListener('click', (event) => {
 });
 
 window.manager.onTooltip(({ projectName, text, kind, optionsCount }) => {
-  if (view === 'bubble') {
+  // kind 'hint' is a manager warning: the MAIN process already spoke it
+  // (speakAsManager), so the balloon adds no chime and no second voice.
+  if (view === 'bubble' && kind !== 'hint') {
     chime(kind);
     if (ttsEnabled && !muted) {
       const phrase = TTS_PHRASES[kind] ?? TTS_PHRASES.waiting;
@@ -848,12 +922,45 @@ window.manager.onTooltip(({ projectName, text, kind, optionsCount }) => {
     }
   }
   const alert = kind === 'question' || kind === 'waiting';
-  toastMark.textContent = alert ? '●' : '✓';
-  toastMark.classList.toggle('warn', alert);
+  toastMark.textContent = kind === 'hint' ? '⚠' : alert ? '●' : '✓';
+  toastMark.classList.toggle('warn', alert || kind === 'hint');
   tooltipProject.textContent = TOAST_TITLE[kind] ?? TOAST_TITLE.done;
   toastOrigin.textContent = `${projectName} · agora`;
   tooltipText.textContent = text;
 });
+
+// Inline nickname editor (issue #63): swaps the folder line for an input;
+// Enter saves (empty clears the nickname), Esc walks away.
+function startRename(container, session) {
+  const input = document.createElement('input');
+  input.className = 'rename-input';
+  input.value = session.alias ?? '';
+  input.placeholder = session.projectName;
+  input.maxLength = 60;
+  container.replaceChildren('└ ', input);
+  input.focus();
+  input.select();
+  let finished = false;
+  const finish = (save) => {
+    if (finished) return; // Enter also blurs — send once
+    finished = true;
+    if (save) {
+      window.manager.renameSession(session.id, input.value);
+    } else {
+      const hasAlias = session.displayName && session.displayName !== session.projectName;
+      container.replaceChildren(
+        hasAlias ? `└ ${session.displayName} (${session.projectName})` : `└ ${session.projectName}`,
+      );
+    }
+  };
+  input.addEventListener('click', (event) => event.stopPropagation());
+  input.addEventListener('keydown', (event) => {
+    event.stopPropagation();
+    if (event.key === 'Enter') finish(true);
+    if (event.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
 
 function relativeTime(timestamp) {
   const seconds = Math.round((Date.now() - timestamp) / 1000);
@@ -1018,7 +1125,19 @@ function sessionElement(session) {
 
   const project = document.createElement('div');
   project.className = 'title';
-  project.textContent = `└ ${session.projectName}`;
+  const hasAlias = session.displayName && session.displayName !== session.projectName;
+  project.textContent = hasAlias
+    ? `└ ${session.displayName} (${session.projectName})`
+    : `└ ${session.projectName}`;
+  const rename = document.createElement('button');
+  rename.className = 'session-rename';
+  rename.textContent = '✎';
+  rename.title = 'Renomear este chat';
+  rename.addEventListener('click', (event) => {
+    event.stopPropagation();
+    startRename(project, session);
+  });
+  project.append(' ', rename);
   card.append(project);
 
   // One message balloon per chat — the exact text that went out in the
@@ -1106,6 +1225,19 @@ function renderBadge(sessions) {
 const updateBanner = document.getElementById('update-banner');
 updateBanner.addEventListener('click', () => window.manager.applyUpdate());
 
+// A hint balloon evaporates in 8s; the panel keeps the last one until the
+// user dismisses it, so whoever was away from the keyboard still finds it.
+const hintBanner = document.getElementById('hint-banner');
+const hintBannerText = document.getElementById('hint-banner-text');
+document.getElementById('hint-banner-close').addEventListener('click', () => {
+  window.manager.dismissHint();
+});
+
+function renderHintBanner(hint) {
+  hintBanner.classList.toggle('hidden', !hint);
+  if (hint) hintBannerText.textContent = `⚠ ${hint.body}`;
+}
+
 function renderUpdateBanner(update) {
   if (!update || (!update.available && !update.ready)) {
     updateBanner.classList.add('hidden');
@@ -1187,9 +1319,11 @@ window.manager.onState((state) => {
   applyShortcuts(state.shortcuts);
   applyAutostart(state.autostart);
   applyAutoUpdate(state.autoUpdate);
+  applyAnnounceUnknown(state.announceWhenFocusUnknown);
   applySound(state.sound);
   renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);
+  renderHintBanner(state.hint);
   renderVoiceStatus(state.voiceDownloading);
   renderTrayStatus(state.trayNeedsRelogin);
   renderUsage(state.tokens);

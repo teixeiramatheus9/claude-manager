@@ -51,7 +51,38 @@ export function win32FocusHint(result) {
 // missing tool or a terminal config, and both fail silently. This maps a
 // failed focus to the one hint worth showing — null when there is nothing
 // actionable to say.
-export function linuxFocusHint(result, term) {
+export function linuxFocusHint(result, term, { canInjectInput = true, bridge = 'none' } = {}) {
+  // On a Wayland session, GNOME's terminals (GNOME Terminal, Console, Ptyxis)
+  // run Wayland-native and never show up to xdotool: the click silently did
+  // nothing. Only the Wayland case earns a hint — on plain X11 the same cause
+  // just means no terminal window is open, and nagging helps nobody. With an
+  // ACTIVE bridge the compositor itself listed the windows, so the terminal
+  // really is closed: quiet there too.
+  if (result?.cause === 'terminal-not-in-x' && !canInjectInput) {
+    if (bridge === 'active') return null;
+    if (bridge === 'asleep') {
+      return {
+        key: 'bridge-asleep',
+        title: 'A ponte do GNOME ainda está dormindo',
+        body:
+          'A ponte está instalada, mas o GNOME só carrega extensão nova quando a ' +
+          'sessão reinicia. Sai e entra da sessão (ou reinicia) que eu passo a te ' +
+          'levar direto pra aba do chat.',
+        speech: 'Instalei a ponte, mas o GNOME só liga ela quando você sair e entrar da sessão!',
+      };
+    }
+    return {
+      key: 'wayland-terminal',
+      title: 'O Wayland esconde teu terminal de mim',
+      body:
+        'Nessa sessão Wayland eu não enxergo a janela do teu terminal. Instala a ' +
+        '"ponte do GNOME" nas configurações do Vizor que eu volto a te levar direto ' +
+        'pra aba certa — a resposta rápida pelo card já funciona mesmo sem ela.',
+      speech:
+        'O Wayland não me deixa achar teu terminal! Instala a ponte do GNOME nas ' +
+        'configurações que eu resolvo isso pra você.',
+    };
+  }
   if (result?.cause === 'no-x-windows' || result?.cause === 'xdotool-failed') {
     return {
       key: 'xdotool',
@@ -77,4 +108,17 @@ export function linuxFocusHint(result, term) {
     };
   }
   return null;
+}
+
+// One hint, three surfaces (issue #62): the balloon shows the actionable body
+// (voice is the worst medium for "sudo apt install ..."), the system
+// notification mirrors it, and the speech line is spoken by the MAIN process
+// only — kind 'hint' tells the renderer to add no speech of its own.
+export function hintAnnouncement(hint) {
+  if (!hint) return null;
+  return {
+    tooltip: { projectName: 'Vizor', text: hint.body, kind: 'hint' },
+    notification: { title: hint.title, body: hint.body },
+    speech: hint.speech,
+  };
 }

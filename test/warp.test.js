@@ -77,6 +77,60 @@ describe('listWindows', () => {
     const { execFn } = fakeExec({ failOn: ['xdotool'] });
     expect(await listWindows({ execFn })).toEqual([]);
   });
+
+  // Ubuntu 24.04 ships xdotool 3.20160805.1, which predates getwindowclassname:
+  // every class query fails and the old code returned an empty list, killing
+  // the whole hunt on a stock install. The class must then come from xprop.
+  it('reads the class through xprop when xdotool lacks getwindowclassname', async () => {
+    const execFn = async (command, args) => {
+      if (command === 'xdotool' && args[0] === 'search') return { stdout: '111\n222' };
+      if (command === 'xdotool' && args[0] === 'getwindowclassname') {
+        throw new Error('xdotool: Unknown command: getwindowclassname');
+      }
+      if (command === 'xdotool' && args[0] === 'getwindowname') {
+        return { stdout: args[1] === '111' ? 'PROJETO-ALFA' : 'PROJETO-BETA' };
+      }
+      if (command === 'xprop' && args[0] === '-id') {
+        return { stdout: 'WM_CLASS(STRING) = "gnome-terminal-server", "Gnome-terminal"' };
+      }
+      return { stdout: '' };
+    };
+    expect(await listWindows({ execFn })).toEqual([
+      { id: '111', wmClass: 'gnome-terminal-server.Gnome-terminal', title: 'PROJETO-ALFA' },
+      { id: '222', wmClass: 'gnome-terminal-server.Gnome-terminal', title: 'PROJETO-BETA' },
+    ]);
+  });
+
+  // xdotool search sees unmapped leader windows (gnome-terminal-server keeps
+  // one); activating those is a silent no-op and the tab-cycling keys would
+  // land on whatever app really has focus. Only windows the WM manages —
+  // the root _NET_CLIENT_LIST, same source wmctrl used — may be candidates.
+  it('drops windows the window manager does not manage', async () => {
+    const execFn = async (command, args) => {
+      if (command === 'xprop' && args[0] === '-root') {
+        // 111 and 222 managed (hex), 333 is a leader the WM never mapped
+        return { stdout: '_NET_CLIENT_LIST(WINDOW): window id # 0x6f, 0xde' };
+      }
+      if (command === 'xdotool' && args[0] === 'search') return { stdout: '111\n222\n333' };
+      if (command === 'xdotool' && args[0] === 'getwindowclassname') {
+        return { stdout: 'gnome-terminal-server' };
+      }
+      if (command === 'xdotool' && args[0] === 'getwindowname') return { stdout: 'titulo' };
+      return { stdout: '' };
+    };
+    const ids = (await listWindows({ execFn })).map((window) => window.id);
+    expect(ids).toEqual(['111', '222']);
+  });
+
+  it('keeps every window when the client list cannot be read', async () => {
+    const execFn = async (command, args) => {
+      if (command === 'xprop') throw new Error('xprop missing');
+      if (args[0] === 'search') return { stdout: '111' };
+      if (args[0] === 'getwindowclassname') return { stdout: 'ptyxis' };
+      return { stdout: 'titulo' };
+    };
+    expect((await listWindows({ execFn })).map((window) => window.id)).toEqual(['111']);
+  });
 });
 
 describe('TERMINALS', () => {
@@ -402,7 +456,7 @@ describe('sendReplyToWarp', () => {
     expect(mode).toBe('typed');
     const typeCall = calls.find((call) => call.args[0] === 'type');
     expect(typeCall.args).toContain('pode seguir');
-    expect(calls.at(-1).args).toEqual(['key', 'Return']);
+    expect(calls.at(-1).args).toEqual(['key', '--clearmodifiers', 'Return']);
   });
 
   it('falls back to the clipboard when typing fails', async () => {
@@ -443,5 +497,98 @@ describe('sendReplyToWarp', () => {
       delayMs: 0,
     });
     expect(mode).toBe('failed');
+  });
+});
+
+function fakeDriver({ windows, tabTitles = null } = {}) {
+  const actions = [];
+  let tabIndex = 0;
+  return {
+    actions,
+    driver: {
+      listWindows: async () => windows,
+      activate: async (id) => {
+        actions.push({ op: 'activate', id });
+      },
+      getTitle: async (id) => {
+        if (tabTitles) return tabTitles[Math.min(tabIndex, tabTitles.length - 1)];
+        return windows.find((window) => window.id === id)?.title ?? '';
+      },
+      pressKey: async (combo) => {
+        actions.push({ op: 'key', combo });
+        if (tabTitles) tabIndex += 1;
+      },
+      typeText: async (text) => {
+        actions.push({ op: 'type', text });
+      },
+    },
+  };
+}
+
+describe('focusChatTab via gnome-terminal dbus tabs', () => {
+  it('switches tabs through active-tab and never presses a key', async () => {
+    let selected = 1;
+    const titles = ['meu-projeto — claude', 'outra-coisa'];
+    const execFn = async (command, args) => {
+      if (command === 'gdbus' && args[0] === 'introspect')
+        return { stdout: 'node /org/gnome/Terminal/window {\n  node 1 {};\n}' };
+      if (command === 'gdbus' && args.includes('org.gtk.Actions.Activate')) {
+        const index = Number(args[args.length - 2].match(/\d+/)[0]);
+        if (index < titles.length) selected = index;
+        return { stdout: '()' };
+      }
+      if (command === 'gdbus' && args.includes('org.gtk.Actions.Describe'))
+        return { stdout: `((true, signature 'i', [<${selected}>]),)` };
+      return { stdout: '' };
+    };
+    const actions = [];
+    const driver = {
+      listWindows: async () => [
+        { id: '7', wmClass: 'gnome-terminal-server', title: titles[selected] },
+      ],
+      activate: async (id) => {
+        actions.push({ op: 'activate', id });
+      },
+      getTitle: async () => titles[selected],
+      pressKey: async (combo) => {
+        actions.push({ op: 'key', combo });
+      },
+      typeText: async () => {},
+    };
+    const result = await focusChatTab(['meu-projeto'], {
+      terminal: 'gnome-terminal',
+      driver,
+      execFn,
+      delayMs: 0,
+    });
+    expect(result).toMatchObject({ focused: true, tabFound: true, matchedTitle: 'meu-projeto — claude' });
+    expect(actions).toContainEqual({ op: 'activate', id: '7' });
+    expect(actions.some((action) => action.op === 'key')).toBe(false);
+  });
+});
+
+describe('focusChatTab with an injected driver', () => {
+  it('hunts tabs through the driver instead of spawning xdotool', async () => {
+    const { driver, actions } = fakeDriver({
+      windows: [{ id: '7', wmClass: 'gnome-terminal-server.Gnome-terminal', title: 'outra' }],
+      tabTitles: ['outra', 'meu-projeto — claude'],
+    });
+    const result = await focusChatTab(['meu-projeto'], {
+      terminal: 'gnome-terminal',
+      driver,
+      delayMs: 0,
+    });
+    expect(result).toMatchObject({ focused: true, tabFound: true });
+    expect(actions.some((action) => action.op === 'key' && action.combo === 'ctrl+Next')).toBe(true);
+  });
+
+  it('types the reply through the driver', async () => {
+    const { driver, actions } = fakeDriver({
+      windows: [{ id: '7', wmClass: 'dev.warp.Warp', title: 'meu-projeto — claude' }],
+    });
+    const result = await sendReplyToWarp(['meu-projeto'], 'bora', { driver, delayMs: 0 });
+    expect(result).toBe('typed');
+    expect(actions).toContainEqual({ op: 'type', text: 'bora' });
+    expect(actions).toContainEqual({ op: 'key', combo: 'Return' });
   });
 });
