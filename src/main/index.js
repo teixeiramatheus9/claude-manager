@@ -546,6 +546,11 @@ async function showGentleHalo(state) {
   spotlightWindow.hide();
   spotlightWindow.setBounds(spotlightBounds(bubbleAnchor, BUBBLE_BOX, SPOT_BOX));
   spotlightWindow.showInactive();
+  // The halo sits ON TOP of the bubble (override-redirect, outside the WM):
+  // if its input region is not empty the bubble is unclickable. X11 drops the
+  // empty region somewhere in the hide/setBounds/show cycle, so it is
+  // re-asserted after every show — never trust the one set at creation.
+  spotlightWindow.setIgnoreMouseEvents(true);
   stayOnTop(spotlightWindow);
   stayOnTop(mainWindow);
 }
@@ -558,7 +563,9 @@ function updateNotificationHalo() {
   const positionable = canPositionWindows && Boolean(bubbleAnchor);
   sendToRenderer('halo', { state: positionable ? null : state });
   if (spotlightTimer) return; // a find-the-bubble flash is running — after it
-  haloActive = state && positionable ? state : null;
+  const wanted = state && positionable ? state : null;
+  if (wanted === haloActive) return; // already waving right — no show churn
+  haloActive = wanted;
   if (!spotlightWindow || spotlightWindow.isDestroyed()) return;
   if (!haloActive) {
     spotlightWindow.hide();
@@ -585,8 +592,10 @@ async function flashSpotlight() {
     spotlightWindow.hide();
     spotlightWindow.setBounds(spotlightBounds(bubbleAnchor, BUBBLE_BOX, SPOT_BOX));
     spotlightWindow.showInactive();
+    spotlightWindow.setIgnoreMouseEvents(true); // see showGentleHalo
     stayOnTop(spotlightWindow);
     stayOnTop(mainWindow); // the bubble itself stays above its halo
+    haloActive = null; // the flash wiped the gentle mode — hand-back re-shows
     clearTimeout(spotlightTimer);
     spotlightTimer = setTimeout(() => {
       spotlightTimer = null;
@@ -1364,7 +1373,8 @@ ipcMain.on('drag:end', () => {
   clearInterval(dragState.timer);
   const wasDragged = dragState.moved;
   dragState = null;
-  updateNotificationHalo(); // the waves follow the bubble to its new spot
+  haloActive = null; // force a re-show at the new spot
+  updateNotificationHalo(); // the waves follow the bubble
   if (!wasDragged) {
     sendToRenderer('ui:click');
     return;
