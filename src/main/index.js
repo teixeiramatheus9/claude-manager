@@ -497,9 +497,16 @@ function applyBounds(win, bounds) {
 // positioning there, and no such fade either.
 const PARK = { x: -32000, y: -32000 };
 
+// The parking trick exists for Windows' DWM cloak fade ONLY. On X11 it
+// backfires twice: setOpacity is a no-op on Linux (the window stays fully
+// visible) and mutter bounces the -32000 move back into the screen — the
+// "parked" window lands visible, click-through and unclosable in the
+// top-left corner. Linux and macOS have no show-fade: hidden means hide().
+const PARKING_PLATFORM = process.platform === 'win32';
+
 function parkWindow(win) {
   if (!win || win.isDestroyed()) return;
-  if (!canPositionWindows) return win.hide();
+  if (!PARKING_PLATFORM || !canPositionWindows) return win.hide();
   win.setOpacity(0);
   win.setIgnoreMouseEvents(true);
   const { width, height } = win.getBounds();
@@ -508,7 +515,7 @@ function parkWindow(win) {
 }
 
 function unparkWindow(win, { focus = false } = {}) {
-  if (!canPositionWindows) {
+  if (!PARKING_PLATFORM || !canPositionWindows) {
     if (focus) win.show();
     else win.showInactive();
     return;
@@ -525,7 +532,7 @@ function unparkWindow(win, { focus = false } = {}) {
 }
 
 function bornParked(win) {
-  if (!canPositionWindows) return;
+  if (!PARKING_PLATFORM || !canPositionWindows) return;
   parkWindow(win);
   win.showInactive();
 }
