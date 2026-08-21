@@ -13,10 +13,33 @@ describe('linuxFocusHint', () => {
     expect(hint.body).toContain('allow_remote_control');
   });
 
+  // On a Wayland session the GNOME terminals run Wayland-native and never
+  // show up to xdotool — the click silently did nothing. That deserves an
+  // explanation, not silence (issue #67's acceptance criterion).
+  it('explains the Wayland wall when the terminal is out of X reach', () => {
+    const hint = linuxFocusHint({ tabFound: false, cause: 'terminal-not-in-x' }, null, {
+      canInjectInput: false,
+    });
+    expect(hint?.key).toBe('wayland-terminal');
+    expect(hint.body.toLowerCase()).toContain('wayland');
+    expect(hint.speech).toBeTruthy();
+  });
+
+  it('stays quiet about terminal-not-in-x on a plain X11 session', () => {
+    expect(
+      linuxFocusHint({ tabFound: false, cause: 'terminal-not-in-x' }, null, {
+        canInjectInput: true,
+      }),
+    ).toBeNull();
+  });
+
   it('every hint carries a spoken line for the manager voice', () => {
     for (const hint of [
       linuxFocusHint({ cause: 'no-x-windows' }, null),
       linuxFocusHint({ tabFound: false, cause: null }, { KITTY_WINDOW_ID: '3' }),
+      linuxFocusHint({ tabFound: false, cause: 'terminal-not-in-x' }, null, {
+        canInjectInput: false,
+      }),
     ]) {
       expect(hint.speech).toBeTruthy();
     }

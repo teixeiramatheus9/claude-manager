@@ -77,6 +77,60 @@ describe('listWindows', () => {
     const { execFn } = fakeExec({ failOn: ['xdotool'] });
     expect(await listWindows({ execFn })).toEqual([]);
   });
+
+  // Ubuntu 24.04 ships xdotool 3.20160805.1, which predates getwindowclassname:
+  // every class query fails and the old code returned an empty list, killing
+  // the whole hunt on a stock install. The class must then come from xprop.
+  it('reads the class through xprop when xdotool lacks getwindowclassname', async () => {
+    const execFn = async (command, args) => {
+      if (command === 'xdotool' && args[0] === 'search') return { stdout: '111\n222' };
+      if (command === 'xdotool' && args[0] === 'getwindowclassname') {
+        throw new Error('xdotool: Unknown command: getwindowclassname');
+      }
+      if (command === 'xdotool' && args[0] === 'getwindowname') {
+        return { stdout: args[1] === '111' ? 'PROJETO-ALFA' : 'PROJETO-BETA' };
+      }
+      if (command === 'xprop' && args[0] === '-id') {
+        return { stdout: 'WM_CLASS(STRING) = "gnome-terminal-server", "Gnome-terminal"' };
+      }
+      return { stdout: '' };
+    };
+    expect(await listWindows({ execFn })).toEqual([
+      { id: '111', wmClass: 'gnome-terminal-server.Gnome-terminal', title: 'PROJETO-ALFA' },
+      { id: '222', wmClass: 'gnome-terminal-server.Gnome-terminal', title: 'PROJETO-BETA' },
+    ]);
+  });
+
+  // xdotool search sees unmapped leader windows (gnome-terminal-server keeps
+  // one); activating those is a silent no-op and the tab-cycling keys would
+  // land on whatever app really has focus. Only windows the WM manages —
+  // the root _NET_CLIENT_LIST, same source wmctrl used — may be candidates.
+  it('drops windows the window manager does not manage', async () => {
+    const execFn = async (command, args) => {
+      if (command === 'xprop' && args[0] === '-root') {
+        // 111 and 222 managed (hex), 333 is a leader the WM never mapped
+        return { stdout: '_NET_CLIENT_LIST(WINDOW): window id # 0x6f, 0xde' };
+      }
+      if (command === 'xdotool' && args[0] === 'search') return { stdout: '111\n222\n333' };
+      if (command === 'xdotool' && args[0] === 'getwindowclassname') {
+        return { stdout: 'gnome-terminal-server' };
+      }
+      if (command === 'xdotool' && args[0] === 'getwindowname') return { stdout: 'titulo' };
+      return { stdout: '' };
+    };
+    const ids = (await listWindows({ execFn })).map((window) => window.id);
+    expect(ids).toEqual(['111', '222']);
+  });
+
+  it('keeps every window when the client list cannot be read', async () => {
+    const execFn = async (command, args) => {
+      if (command === 'xprop') throw new Error('xprop missing');
+      if (args[0] === 'search') return { stdout: '111' };
+      if (args[0] === 'getwindowclassname') return { stdout: 'ptyxis' };
+      return { stdout: 'titulo' };
+    };
+    expect((await listWindows({ execFn })).map((window) => window.id)).toEqual(['111']);
+  });
 });
 
 describe('TERMINALS', () => {

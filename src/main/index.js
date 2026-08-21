@@ -1035,7 +1035,10 @@ async function huntSessionTab(session) {
   if (!result.tabFound && !focusNudgeDone) {
     if (process.platform === 'darwin') nudgeMacosPermissions();
     else if (process.platform === 'linux')
-      nudgeFocusPrereqs(linuxFocusHint(result, session?.term), 'linux');
+      nudgeFocusPrereqs(
+        linuxFocusHint(result, session?.term, { canInjectInput: displayMode.canInjectInput }),
+        'linux',
+      );
     else if (process.platform === 'win32') nudgeFocusPrereqs(win32FocusHint(result), 'win32');
   }
   if (session?.id) {

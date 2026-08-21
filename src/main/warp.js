@@ -5,6 +5,48 @@ import { selectExactTab, VIA_APP_HINTS } from './terminal-target.js';
 const execFileAsync = promisify(execFile);
 const REPLY_TYPE_DELAY_MS = 350;
 
+// xdotool search reports ids in decimal, _NET_CLIENT_LIST in hex.
+const windowIdNumber = (id) => {
+  const text = String(id).trim().toLowerCase();
+  return Number.parseInt(text, text.startsWith('0x') ? 16 : 10);
+};
+
+// The windows the WM actually manages, from the same root property wmctrl
+// read. xdotool search also sees unmapped leader windows (gnome-terminal-server
+// keeps one): activating those is a silent no-op, and the tab-cycling keys that
+// follow would land on whatever app really has focus. null = list unreadable,
+// in which case the caller keeps every window rather than hiding them all.
+async function managedWindowIds(execFn) {
+  try {
+    const { stdout } = await execFn('xprop', ['-root', '_NET_CLIENT_LIST']);
+    const ids = String(stdout ?? '').match(/0x[0-9a-f]+/gi);
+    return ids ? new Set(ids.map(windowIdNumber)) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Ubuntu 24.04 still ships xdotool 3.20160805.1, which predates
+// getwindowclassname — treating its failure as "window vanished" used to drop
+// every window and kill the hunt on a stock install. On the first "Unknown
+// command" the class queries switch to xprop for the rest of the listing.
+async function windowClass(execFn, id, state) {
+  if (!state.classnameUnsupported) {
+    try {
+      const { stdout } = await execFn('xdotool', ['getwindowclassname', id]);
+      return String(stdout ?? '').trim();
+    } catch (error) {
+      const detail = `${error?.message ?? ''} ${error?.stderr ?? ''}`;
+      if (!/unknown command/i.test(detail)) throw error; // window really vanished
+      state.classnameUnsupported = true;
+    }
+  }
+  const { stdout } = await execFn('xprop', ['-id', id, 'WM_CLASS']);
+  const match = String(stdout ?? '').match(/"([^"]*)",\s*"([^"]*)"/);
+  if (!match) throw new Error(`WM_CLASS unreadable for ${id}`);
+  return `${match[1]}.${match[2]}`;
+}
+
 // Window listing without wmctrl: xdotool prints ids, then class and title come
 // one query at a time. --onlyvisible is deliberately NOT used — it reported 1
 // window out of 22 on GNOME/XWayland, hiding the very terminal we look for.
@@ -20,16 +62,20 @@ export async function listWindows({ execFn = execFileAsync } = {}) {
     return []; // xdotool missing or no X display — the caller names the cause
   }
 
+  const managed = await managedWindowIds(execFn);
+  if (managed) ids = ids.filter((id) => managed.has(windowIdNumber(id)));
+
+  const state = { classnameUnsupported: false };
   const windows = [];
   for (const id of ids) {
     try {
-      const [classResult, nameResult] = await Promise.all([
-        execFn('xdotool', ['getwindowclassname', id]),
+      const [wmClass, nameResult] = await Promise.all([
+        windowClass(execFn, id, state),
         execFn('xdotool', ['getwindowname', id]),
       ]);
       windows.push({
         id,
-        wmClass: String(classResult.stdout ?? '').trim(),
+        wmClass,
         title: String(nameResult.stdout ?? '').trim(),
       });
     } catch {
