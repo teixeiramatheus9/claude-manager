@@ -7,3 +7,6 @@
 - Arrastar a bolha com uma onda ativa deixava os anéis piscando no lugar
   ANTIGO — uma isca que parecia a bolha mas não clicava. Agora as ondas se
   mudam junto com ela.
+- Blindagem de verdade contra a bolha "surda": a janela das ondas nunca mais
+  é re-mapeada (o vai-e-volta é o que fazia o sistema devolver os cliques pra
+  ela de vez em quando) e um guardião reafirma a transparência a cada segundo.

@@ -34,6 +34,12 @@
           opacity: 0;
         }
       }
+      /* The window stays permanently mapped (remapping races the X input
+         region empty/full on Electron 42); the rings only exist when a mode
+         class is on — no class, nothing painted. */
+      body:not(.gentle):not(.flash) .ring {
+        display: none;
+      }
       .ring {
         position: absolute;
         inset: 26px;
