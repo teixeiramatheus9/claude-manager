@@ -728,6 +728,19 @@ autoUpdateCheckbox.addEventListener('change', () => {
   applyAutoUpdate(autoUpdateCheckbox.checked);
   window.manager.setConfig({ autoUpdate: autoUpdateCheckbox.checked });
 });
+
+const announceUnknownCheckbox = document.getElementById('announce-unknown');
+const announceUnknownState = document.getElementById('announce-unknown-state');
+
+function applyAnnounceUnknown(on) {
+  announceUnknownCheckbox.checked = Boolean(on);
+  announceUnknownState.textContent = on ? '[on]' : '[off]';
+}
+
+announceUnknownCheckbox.addEventListener('change', () => {
+  applyAnnounceUnknown(announceUnknownCheckbox.checked);
+  window.manager.setConfig({ announceWhenFocusUnknown: announceUnknownCheckbox.checked });
+});
 for (const select of document.querySelectorAll('.sel select')) enhanceSelect(select);
 const budgetInput = document.getElementById('budget');
 const budgetLabel = document.getElementById('budget-label');
@@ -1246,6 +1259,7 @@ window.manager.onState((state) => {
   applyShortcuts(state.shortcuts);
   applyAutostart(state.autostart);
   applyAutoUpdate(state.autoUpdate);
+  applyAnnounceUnknown(state.announceWhenFocusUnknown);
   applySound(state.sound);
   renderQuitButton(state.trayAvailable);
   renderUpdateBanner(state.update);

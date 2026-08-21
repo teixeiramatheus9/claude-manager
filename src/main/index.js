@@ -80,6 +80,7 @@ import {
 } from './permissions-darwin.js';
 import { linuxFocusHint, win32FocusHint, hintAnnouncement } from './focus-hints.js';
 import { resolveWindowDriver } from './window-driver.js';
+import { shouldAnnounce as notifyPolicy } from './notify-policy.js';
 import { installBridge, uninstallBridge, bridgeStatus, autoSetupBridge } from './bridge-manager.js';
 import { sendUserMessage } from './cc-peer.js';
 
@@ -144,6 +145,40 @@ function autoSetupBridgeOnWayland() {
       showTooltip();
     })
     .catch((error) => log(`bridge auto-setup failed: ${error}`));
+}
+
+// Bark or stay silent (issue #66): the card always updates, but chime, voice
+// and balloon only fire when the user is NOT already looking at that chat.
+const lastAnnouncements = new Map(); // sessionId → { text, at }
+
+async function sessionFocused(session) {
+  if (process.platform !== 'linux') return null; // V1: no probe elsewhere
+  try {
+    const { driver } = await windowDriver();
+    const active = await driver.activeWindow?.();
+    if (!active) return null;
+    if (!terminal.isTerminalWindow(active)) return false;
+    return terminal.titleMatchesKeys(active.title, await sessionSearchKeys(session));
+  } catch {
+    return null;
+  }
+}
+
+async function allowAnnouncement(session, kind, text) {
+  const decision = notifyPolicy({
+    kind,
+    text,
+    focused: await sessionFocused(session),
+    lastAnnouncement: lastAnnouncements.get(session.id) ?? null,
+    announceWhenUnknown: managerConfig.announceWhenFocusUnknown,
+    now: Date.now(),
+  });
+  if (decision.announce) {
+    lastAnnouncements.set(session.id, { text, at: Date.now() });
+  } else {
+    log(`announcement suppressed (${decision.reason}) for ${session.id?.slice(0, 8)}`);
+  }
+  return decision.announce;
 }
 
 // 'none' | 'asleep' | 'active' — the hint pipeline says different things for
@@ -292,6 +327,7 @@ function sendState() {
     shortcuts: { values: managerConfig.shortcuts, failed: shortcutFailures },
     autostart: autostartEnabled(),
     autoUpdate: managerConfig.autoUpdate,
+    announceWhenFocusUnknown: managerConfig.announceWhenFocusUnknown,
     sound: {
       muted: managerConfig.muted,
       volume: managerConfig.soundVolume,
@@ -770,8 +806,10 @@ async function generateVoiceForStop(session) {
     tokenBudget.add(voice.tokensUsed);
   }
   registry.setManagerMessage(session.id, voice);
-  sendToRenderer('tooltip', { projectName: session.projectName, text: voice.message, kind: 'done' });
-  showTooltip();
+  if (await allowAnnouncement(session, 'done', voice.message)) {
+    sendToRenderer('tooltip', { projectName: session.projectName, text: voice.message, kind: 'done' });
+    showTooltip();
+  }
 }
 
 // The Notification hook often fires BEFORE Claude Code flushes the ask entry
@@ -799,13 +837,16 @@ async function enrichNotification(session) {
   const text = firstQuestion?.question ?? session.managerMessage;
   if (!text) return;
   if (firstQuestion) registry.setManagerMessage(session.id, { message: text });
-  sendToRenderer('tooltip', {
-    projectName: session.projectName,
-    text,
-    kind: firstQuestion ? 'question' : 'waiting',
-    optionsCount: firstQuestion?.options?.length ?? 0,
-  });
-  showTooltip();
+  const kind = firstQuestion ? 'question' : 'waiting';
+  if (await allowAnnouncement(session, kind, text)) {
+    sendToRenderer('tooltip', {
+      projectName: session.projectName,
+      text,
+      kind,
+      optionsCount: firstQuestion?.options?.length ?? 0,
+    });
+    showTooltip();
+  }
 }
 
 function onHookEvent(event) {
@@ -922,6 +963,8 @@ ipcMain.handle('config:set', (_event, partial) => {
   if (Number.isFinite(partial?.panelScale)) allowed.panelScale = clampScale(partial.panelScale);
   if (typeof partial?.crt === 'boolean') allowed.crt = partial.crt;
   if (typeof partial?.autoUpdate === 'boolean') allowed.autoUpdate = partial.autoUpdate;
+  if (typeof partial?.announceWhenFocusUnknown === 'boolean')
+    allowed.announceWhenFocusUnknown = partial.announceWhenFocusUnknown;
   if (typeof partial?.muted === 'boolean') allowed.muted = partial.muted;
   if (typeof partial?.ttsEnabled === 'boolean') allowed.ttsEnabled = partial.ttsEnabled;
   if (typeof partial?.timbre === 'string') allowed.timbre = partial.timbre;
