@@ -163,6 +163,13 @@ export function predownloadVoice(voiceId, { enabled = true, ensureFn = ensureVoi
   return true;
 }
 
+// The brand is pronounced like the English "visor" ("váizor"), but pt-BR
+// voices read the spelling literally. Respell it for SPEECH only — every
+// displayed surface keeps "Vizor" (issue #71).
+export function speakableText(text) {
+  return String(text ?? '').replace(/\bvizor\b/gi, 'Váizor');
+}
+
 export function speak(
   text,
   {
@@ -174,12 +181,13 @@ export function speak(
   } = {},
 ) {
   if (volume <= 0) return;
+  const speech = speakableText(text);
   const voiceId = VOICES[voice] ? voice : DEFAULT_VOICE;
   const ready = installed ?? isVoiceInstalled(sherpaDir, voiceId);
   if (ready) {
-    speakNeural(text, voiceId, spawnFn, volume);
+    speakNeural(speech, voiceId, spawnFn, volume);
     return;
   }
-  speakWithSystemVoice(text, spawnFn, volume);
+  speakWithSystemVoice(speech, spawnFn, volume);
   ensureFn(voiceId);
 }
