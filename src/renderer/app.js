@@ -102,6 +102,15 @@ window.manager.onClick(() => {
   if (view === 'bubble') togglePanel();
 });
 
+// Notification waves, bubble-glow flavor: used when the halo window cannot be
+// positioned (Wayland / bubble never placed). Main sends state: null there
+// whenever the ring window is doing the job instead.
+const HALO_CLASSES = ['halo-done', 'halo-question', 'halo-permission'];
+window.manager.onHalo(({ state }) => {
+  for (const klass of HALO_CLASSES) bubble.classList.remove(klass);
+  if (state) bubble.classList.add(`halo-${state}`);
+});
+
 // "Encontrar a bolha": a short pulse so the eye finds the freshly centered
 // (or merely revealed, on Wayland) bubble.
 let spottedTimer = null;

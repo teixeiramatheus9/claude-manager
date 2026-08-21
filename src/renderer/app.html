@@ -305,6 +305,33 @@
         border-color: var(--accent);
       }
 
+      /* Notification waves, bubble-glow flavor (no positionable halo window):
+         a slow breath in the state's color until the panel is opened. */
+      @keyframes halo-breathe {
+        0%,
+        100% {
+          box-shadow: 0 0 5px 1px var(--halo);
+        }
+        50% {
+          box-shadow: 0 0 16px 5px var(--halo);
+        }
+      }
+      #bubble.halo-done,
+      #bubble.halo-question,
+      #bubble.halo-permission {
+        animation: halo-breathe 2.6s ease-in-out infinite;
+        border-color: var(--halo);
+      }
+      #bubble.halo-done {
+        --halo: #3ecf8e;
+      }
+      #bubble.halo-question {
+        --halo: #e0b341;
+      }
+      #bubble.halo-permission {
+        --halo: #e05561;
+      }
+
       /* --- toast --- */
       #tooltip {
         -webkit-app-region: no-drag;

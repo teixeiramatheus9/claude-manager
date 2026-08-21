@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'node:events';
-import {
-  buildPrompt,
+import { buildPrompt,
   fallbackMessage,
   humanizeNotification,
   parseVoiceResponse,
   generateManagerMessage,
-  WAITING_PHRASES,
-} from '../src/main/manager-voice.js';
+  WAITING_PHRASES, isPermissionAsk } from '../src/main/manager-voice.js';
 
 function fakeSpawn({ stdout = '', exitCode = 0, delayMs = 0, failToStart = false } = {}) {
   const calls = [];
@@ -125,5 +123,19 @@ describe('manager voice', () => {
       spawnFn,
     });
     expect(result.message).toContain('proj');
+  });
+});
+
+
+// The halo needs to know BEFORE humanizeNotification rewrites the message —
+// the raw "permission to use X" is gone right after.
+describe('isPermissionAsk', () => {
+  it('spots the permission notification', () => {
+    expect(isPermissionAsk('Claude needs your permission to use Bash')).toBe(true);
+  });
+
+  it('is false for the plain waiting notification', () => {
+    expect(isPermissionAsk('Claude is waiting for your input')).toBe(false);
+    expect(isPermissionAsk(undefined)).toBe(false);
   });
 });
